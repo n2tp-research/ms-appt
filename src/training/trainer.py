@@ -180,6 +180,8 @@ class MS_APPT_Trainer:
         progress_bar = tqdm(train_loader, desc=f"Epoch {self.current_epoch}")
         
         optimizer_step_count = 0
+        accumulated_loss = 0.0
+        grad_norm = 0.0
         
         for batch_idx, batch in enumerate(progress_bar):
             protein1_embeddings, protein2_embeddings = self._get_embeddings_batch(
@@ -226,18 +228,30 @@ class MS_APPT_Trainer:
                 optimizer_step_count += 1
                 self.global_step += 1
             
-            batch_loss = loss.item() * self.config['training']['gradient_accumulation_steps']
-            epoch_metrics['loss'] += batch_loss
-            epoch_metrics['grad_norm'] += grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
+            # Track loss for this step
+            accumulated_loss += loss.item()
             
-            progress_bar.set_postfix({
-                'loss': batch_loss,
-                'grad_norm': grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
-            })
+            # Update progress bar
+            if (batch_idx + 1) % self.config['training']['gradient_accumulation_steps'] == 0:
+                avg_loss = accumulated_loss  # Already divided by gradient_accumulation_steps
+                epoch_metrics['loss'] += avg_loss
+                epoch_metrics['grad_norm'] += grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
+                
+                progress_bar.set_postfix({
+                    'loss': avg_loss,
+                    'grad_norm': grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
+                })
+                
+                accumulated_loss = 0.0
         
-        num_batches = len(train_loader)
-        epoch_metrics['loss'] /= num_batches
-        epoch_metrics['grad_norm'] /= optimizer_step_count
+        # Average metrics over optimizer steps
+        if optimizer_step_count > 0:
+            epoch_metrics['loss'] /= optimizer_step_count
+            epoch_metrics['grad_norm'] /= optimizer_step_count
+        else:
+            # Handle case where no optimizer steps were taken
+            epoch_metrics['loss'] = accumulated_loss / max(1, batch_idx + 1)
+            epoch_metrics['grad_norm'] = 0.0
         
         return dict(epoch_metrics)
     
