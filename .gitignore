@@ -30,6 +30,8 @@ MANIFEST
 # Data files
 *.csv
 !example_*.csv
+!train.csv
+!test.csv
 *.tsv
 *.xlsx
 *.h5
