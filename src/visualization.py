@@ -41,7 +41,7 @@ def plot_scatter_predictions(y_true: np.ndarray, y_pred: np.ndarray,
     ax.legend(loc='upper left')
     ax.grid(True, alpha=0.3)
     
-    from ..evaluation.metrics import calculate_mse, calculate_rmse, calculate_mae
+    from src.evaluation.metrics import calculate_mse, calculate_rmse, calculate_mae
     mse = calculate_mse(y_true, y_pred)
     rmse = calculate_rmse(y_true, y_pred)
     mae = calculate_mae(y_true, y_pred)
