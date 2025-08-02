@@ -81,7 +81,7 @@ training:
     
   # Training parameters
   batch_size: 32
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 1
   max_epochs: 100
   early_stopping:
     patience: 10
