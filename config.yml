@@ -23,14 +23,14 @@ data:
 model:
   # ESM-2 encoder configuration
   encoder:
-    model_name: "facebook/esm2_t33_650M_UR50D"
-    embedding_dim: 1280  # ESM-2 650M has 1280 hidden dim
+    model_name: "facebook/esm2_t36_3B_UR50D"
+    embedding_dim: 2560  # ESM-2 650M has 1280 hidden dim
     freeze_epochs: 5
     fine_tune_lr_factor: 0.1
   
   # Projection layer
   projection:
-    output_dim: 256  # Project from 1280 to 256 for efficiency
+    output_dim: 256  # Project from 2560 to 256 for efficiency
     activation: "relu"
     dropout: 0.1
     
