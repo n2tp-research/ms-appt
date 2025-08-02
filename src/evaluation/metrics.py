@@ -1,5 +1,13 @@
 import numpy as np
 from scipy import stats
+from sklearn.metrics import (
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score,
+    mean_absolute_percentage_error,
+    explained_variance_score,
+    max_error
+)
 from typing import Dict, Tuple, Optional
 import logging
 
@@ -7,36 +15,41 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return np.mean((y_true - y_pred) ** 2)
+    """Calculate Mean Squared Error using sklearn."""
+    return mean_squared_error(y_true, y_pred)
 
 
 def calculate_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return np.sqrt(calculate_mse(y_true, y_pred))
+    """Calculate Root Mean Squared Error using sklearn."""
+    return np.sqrt(mean_squared_error(y_true, y_pred))
 
 
 def calculate_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return np.mean(np.abs(y_true - y_pred))
+    """Calculate Mean Absolute Error using sklearn."""
+    return mean_absolute_error(y_true, y_pred)
 
 
 def calculate_r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Calculate R² (coefficient of determination)."""
-    ss_res = np.sum((y_true - y_pred) ** 2)
-    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
-    return 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+    """Calculate R² (coefficient of determination) using sklearn."""
+    return r2_score(y_true, y_pred)
 
 
 def calculate_pearson(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
+    """Calculate Pearson correlation coefficient."""
     if len(y_true) < 3:
         return np.nan, np.nan
     
+    # Use scipy for p-value calculation
     correlation, p_value = stats.pearsonr(y_true, y_pred)
     return correlation, p_value
 
 
 def calculate_spearman(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
+    """Calculate Spearman rank correlation coefficient."""
     if len(y_true) < 3:
         return np.nan, np.nan
     
+    # Use scipy for p-value calculation
     correlation, p_value = stats.spearmanr(y_true, y_pred)
     return correlation, p_value
 
@@ -73,12 +86,23 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray,
     
     metrics = {}
     
-    # Primary metrics on original pKd scale
+    # Primary metrics on original pKd scale using sklearn
     metrics['mse'] = calculate_mse(y_true_original, y_pred_original)
     metrics['rmse'] = calculate_rmse(y_true_original, y_pred_original)
     metrics['mae'] = calculate_mae(y_true_original, y_pred_original)
     metrics['r2'] = calculate_r2(y_true_original, y_pred_original)
     
+    # Additional sklearn metrics
+    metrics['explained_variance'] = explained_variance_score(y_true_original, y_pred_original)
+    metrics['max_error'] = max_error(y_true_original, y_pred_original)
+    
+    # Mean Absolute Percentage Error (if no zeros in y_true)
+    if np.all(y_true_original != 0):
+        metrics['mape'] = mean_absolute_percentage_error(y_true_original, y_pred_original)
+    else:
+        metrics['mape'] = np.nan
+    
+    # Correlation metrics
     pearson_r, pearson_p = calculate_pearson(y_true_original, y_pred_original)
     metrics['pearson_r'] = pearson_r
     metrics['pearson_p'] = pearson_p
@@ -87,6 +111,7 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray,
     metrics['spearman_r'] = spearman_r
     metrics['spearman_p'] = spearman_p
     
+    # Domain-specific metrics
     metrics['fraction_within_1'] = calculate_fraction_within_threshold(
         y_true_original, y_pred_original, 1.0
     )
@@ -167,7 +192,7 @@ def analyze_errors_by_range(y_true: np.ndarray, y_pred: np.ndarray,
 def print_metrics_summary(metrics: Dict[str, float]):
     logger.info("\n=== Evaluation Metrics ===")
     
-    # Always present metrics
+    # Primary metrics
     if 'mse' in metrics:
         logger.info(f"MSE: {metrics['mse']:.4f}")
     if 'rmse' in metrics:
@@ -177,13 +202,21 @@ def print_metrics_summary(metrics: Dict[str, float]):
     if 'r2' in metrics:
         logger.info(f"R²: {metrics['r2']:.4f}")
     
-    # Optional correlation metrics
+    # Additional sklearn metrics
+    if 'explained_variance' in metrics:
+        logger.info(f"Explained Variance: {metrics['explained_variance']:.4f}")
+    if 'max_error' in metrics:
+        logger.info(f"Max Error: {metrics['max_error']:.4f}")
+    if 'mape' in metrics and not np.isnan(metrics['mape']):
+        logger.info(f"MAPE: {metrics['mape']:.2%}")
+    
+    # Correlation metrics
     if 'pearson_r' in metrics:
         logger.info(f"Pearson r: {metrics['pearson_r']:.4f} (p={metrics['pearson_p']:.2e})")
     if 'spearman_r' in metrics:
         logger.info(f"Spearman ρ: {metrics['spearman_r']:.4f} (p={metrics['spearman_p']:.2e})")
     
-    # Optional domain-specific metrics
+    # Domain-specific metrics
     if 'fraction_within_1' in metrics:
         logger.info(f"Fraction within 1 log unit: {metrics['fraction_within_1']:.3f}")
     if 'fraction_within_2' in metrics:
