@@ -1,0 +1,140 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch
+*.pth
+*.pt
+!**/best_model.pt  # Exception for best model checkpoint
+
+# Data files
+*.csv
+!example_*.csv
+*.tsv
+*.xlsx
+*.h5
+*.hdf5
+
+# Embeddings cache
+embeddings_cache/
+embeddings_cache.h5
+
+# Model outputs
+checkpoints/
+logs/
+predictions/
+figures/
+analysis_output/
+*.png
+*.pdf
+*.jpg
+*.jpeg
+*.svg
+
+# Notebooks
+.ipynb_checkpoints
+*.ipynb
+!notebooks/*.ipynb
+
+# Environment
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Documentation
+docs/_build/
+docs/_static/
+docs/_templates/
+site/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+.cache/
+tmp/
+temp/
+
+# Config overrides
+config_local.yml
+config_*.yml
+!config.yml
+
+# Secrets and credentials
+*.key
+*.pem
+*.env
+.env.*
+!.env.example
+Claude.md
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.Spotlight-V100
+.Trashes
+
+# Profiling
+*.prof
+*.lprof
+
+# Model artifacts
+normalization_params.json
+training_history.json
+validation_performance.json
+checkpoint_info.json
+*.report.json
+
+# WandB
+wandb/
+.wandb/
+
+# Tensorboard
+runs/
+events.out.tfevents.*

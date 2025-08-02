@@ -1,0 +1,154 @@
+# MS-APPT Configuration File
+# Multi-Scale Affinity Protein-Protein Transformer
+
+# Data Configuration
+data:
+  train_path: "train.csv"
+  test_path: "test.csv"
+  cache_dir: "embeddings_cache"
+  
+  # Preprocessing parameters
+  preprocessing:
+    min_length: 30
+    max_length: 2000
+    valid_amino_acids: "ACDEFGHIKLMNPQRSTVWY"
+    remove_duplicates: true
+    
+  # Train/validation split
+  validation_split: 0.1
+  stratify_by: "pkd"
+  random_seed: 42
+
+# Model Architecture
+model:
+  # ESM-2 encoder configuration
+  encoder:
+    model_name: "facebook/esm2_t30_150M_UR50D"
+    embedding_dim: 640
+    freeze_epochs: 5
+    fine_tune_lr_factor: 0.1
+  
+  # Projection layer
+  projection:
+    output_dim: 512
+    activation: "relu"
+    
+  # Multi-scale convolution
+  conv_layers:
+    kernel_sizes: [3, 5, 7]
+    num_filters: 128
+    activation: "relu"
+    
+  # Self-attention configuration
+  self_attention:
+    num_heads: 8
+    hidden_dim: 512
+    dropout: 0.1
+    
+  # Cross-attention configuration
+  cross_attention:
+    num_heads: 8
+    hidden_dim: 512
+    dropout: 0.1
+    
+  # Pooling strategies
+  pooling:
+    methods: ["mean", "max", "attention"]
+    attention_hidden_dim: 256
+    
+  # MLP head configuration
+  mlp:
+    hidden_dims: [1024, 512, 256]
+    activation: "gelu"
+    dropout: 0.2
+    use_layer_norm: true
+    use_residual: true
+    
+# Training Configuration
+training:
+  # Optimizer settings
+  optimizer:
+    type: "AdamW"
+    learning_rate: 5e-5
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 1e-4
+    
+  # Learning rate scheduler
+  scheduler:
+    type: "CosineAnnealingLR"
+    eta_min: 1e-6
+    
+  # Training parameters
+  batch_size: 16
+  gradient_accumulation_steps: 2
+  max_epochs: 100
+  early_stopping:
+    patience: 10
+    metric: "validation_rmse"
+    mode: "min"
+    
+  # Mixed precision and optimization
+  mixed_precision: true
+  gradient_clipping:
+    max_norm: 1.0
+    
+  # Checkpointing
+  checkpoint_dir: "checkpoints"
+  save_best_only: true
+  save_last_k: 5
+  
+# Loss and Metrics
+loss:
+  type: "mse"
+  reduction: "mean"
+  
+metrics:
+  regression:
+    - "rmse"
+    - "mae"
+    - "pearson"
+    - "spearman"
+  domain_specific:
+    - "fraction_within_1"
+    - "fraction_within_2"
+    - "relative_error"
+    
+# Hardware and Performance
+hardware:
+  device: "cuda"
+  num_workers: 4
+  pin_memory: true
+  
+# Logging Configuration
+logging:
+  log_dir: "logs"
+  log_level: "INFO"
+  use_wandb: false
+  wandb_project: "ms-appt"
+  use_tensorboard: true
+  log_every_n_steps: 10
+  
+# Reproducibility
+reproducibility:
+  seed: 42
+  deterministic: true
+  benchmark: false
+  
+# Inference Configuration
+inference:
+  batch_size: 32
+  use_cache: true
+  output_dir: "predictions"
+  save_attention_weights: false
+  
+# Visualization
+visualization:
+  output_dir: "figures"
+  formats: ["png", "pdf"]
+  dpi: 300
+  plot_types:
+    - "scatter"
+    - "error_distribution"
+    - "residuals"
+    - "stratified_performance"
