@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import GradScaler
+from torch.amp import autocast
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
@@ -188,7 +189,7 @@ class MS_APPT_Trainer:
             targets = batch['pkd_normalized'].to(self.device)
             
             if self.use_amp:
-                with autocast():
+                with autocast(device_type='cuda', dtype=torch.float16):
                     predictions = self.model(
                         protein1_embeddings, protein2_embeddings,
                         batch['protein1_sequences'], batch['protein2_sequences']
@@ -257,7 +258,7 @@ class MS_APPT_Trainer:
                 targets = batch['pkd_normalized'].to(self.device)
                 
                 if self.use_amp:
-                    with autocast():
+                    with autocast(device_type='cuda', dtype=torch.float16):
                         predictions = self.model(
                             protein1_embeddings, protein2_embeddings,
                             batch['protein1_sequences'], batch['protein2_sequences']

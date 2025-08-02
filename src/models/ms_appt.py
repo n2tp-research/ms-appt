@@ -59,7 +59,8 @@ class MultiHeadSelfAttention(nn.Module):
         
         if mask is not None:
             mask = mask.unsqueeze(1).unsqueeze(2)
-            scores = scores.masked_fill(mask == 0, -1e9)
+            # Use -65504 for float16 compatibility (max negative value for half precision)
+            scores = scores.masked_fill(mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
         
         attention_weights = F.softmax(scores, dim=-1)
         self._attention_weights = attention_weights.clone()
@@ -112,7 +113,8 @@ class CrossAttention(nn.Module):
         
         if key_mask is not None:
             key_mask = key_mask.unsqueeze(1).unsqueeze(2)
-            scores = scores.masked_fill(key_mask == 0, -1e9)
+            # Use -65504 for float16 compatibility (max negative value for half precision)
+            scores = scores.masked_fill(key_mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
         
         attention_weights = F.softmax(scores, dim=-1)
         self._attention_weights = attention_weights.clone()
@@ -143,7 +145,8 @@ class AttentionPooling(nn.Module):
         attention_scores = self.attention_weights(x).squeeze(-1)
         
         if mask is not None:
-            attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
+            # Use -65504 for float16 compatibility
+            attention_scores = attention_scores.masked_fill(mask == 0, -65504.0 if attention_scores.dtype == torch.float16 else -1e9)
         
         attention_weights = F.softmax(attention_scores, dim=1)
         
@@ -288,7 +291,9 @@ class MS_APPT(nn.Module):
             pooled_features.append(mean_pooled)
         
         if self.use_max_pool:
-            masked_features = features.masked_fill(~mask.unsqueeze(-1).bool(), -1e9)
+            # Use appropriate negative value for dtype
+            fill_value = -65504.0 if features.dtype == torch.float16 else -1e9
+            masked_features = features.masked_fill(~mask.unsqueeze(-1).bool(), fill_value)
             max_pooled, _ = masked_features.max(dim=1)
             pooled_features.append(max_pooled)
         
