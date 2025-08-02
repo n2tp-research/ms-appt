@@ -158,15 +158,30 @@ def analyze_errors_by_range(y_true: np.ndarray, y_pred: np.ndarray,
 
 def print_metrics_summary(metrics: Dict[str, float]):
     logger.info("\n=== Evaluation Metrics ===")
-    logger.info(f"MSE: {metrics['mse']:.4f}")
-    logger.info(f"RMSE: {metrics['rmse']:.4f}")
-    logger.info(f"MAE: {metrics['mae']:.4f}")
-    logger.info(f"R²: {metrics['r2']:.4f}")
-    logger.info(f"Pearson r: {metrics['pearson_r']:.4f} (p={metrics['pearson_p']:.2e})")
-    logger.info(f"Spearman ρ: {metrics['spearman_r']:.4f} (p={metrics['spearman_p']:.2e})")
-    logger.info(f"Fraction within 1 log unit: {metrics['fraction_within_1']:.3f}")
-    logger.info(f"Fraction within 2 log units: {metrics['fraction_within_2']:.3f}")
-    logger.info(f"Mean relative error: {metrics['mean_relative_error']:.3f}")
+    
+    # Always present metrics
+    if 'mse' in metrics:
+        logger.info(f"MSE: {metrics['mse']:.4f}")
+    if 'rmse' in metrics:
+        logger.info(f"RMSE: {metrics['rmse']:.4f}")
+    if 'mae' in metrics:
+        logger.info(f"MAE: {metrics['mae']:.4f}")
+    if 'r2' in metrics:
+        logger.info(f"R²: {metrics['r2']:.4f}")
+    
+    # Optional correlation metrics
+    if 'pearson_r' in metrics:
+        logger.info(f"Pearson r: {metrics['pearson_r']:.4f} (p={metrics['pearson_p']:.2e})")
+    if 'spearman_r' in metrics:
+        logger.info(f"Spearman ρ: {metrics['spearman_r']:.4f} (p={metrics['spearman_p']:.2e})")
+    
+    # Optional domain-specific metrics
+    if 'fraction_within_1' in metrics:
+        logger.info(f"Fraction within 1 log unit: {metrics['fraction_within_1']:.3f}")
+    if 'fraction_within_2' in metrics:
+        logger.info(f"Fraction within 2 log units: {metrics['fraction_within_2']:.3f}")
+    if 'mean_relative_error' in metrics:
+        logger.info(f"Mean relative error: {metrics['mean_relative_error']:.3f}")
 
 
 def create_performance_report(y_true: np.ndarray, y_pred: np.ndarray,
