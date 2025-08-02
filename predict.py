@@ -62,10 +62,24 @@ def main():
     if 'performance' in results:
         logger.info("\nPerformance Summary:")
         overall_metrics = results['performance']['overall_metrics']
+        
+        # Show basic metrics on original pKd scale
+        logger.info("\nBasic Metrics (Original pKd Scale):")
+        logger.info(f"  MSE:  {overall_metrics['mse']:.4f}")
         logger.info(f"  RMSE: {overall_metrics['rmse']:.4f}")
-        logger.info(f"  MAE: {overall_metrics['mae']:.4f}")
+        logger.info(f"  MAE:  {overall_metrics['mae']:.4f}")
+        
+        # Show correlation metrics
+        logger.info("\nCorrelation Metrics:")
+        logger.info(f"  R²: {overall_metrics['r2']:.4f}")
         logger.info(f"  Pearson r: {overall_metrics['pearson_r']:.4f}")
         logger.info(f"  Spearman ρ: {overall_metrics['spearman_r']:.4f}")
+        
+        # Show domain-specific metrics if available
+        if 'fraction_within_1' in overall_metrics:
+            logger.info("\nDomain-Specific Metrics:")
+            logger.info(f"  Fraction within 1 log unit: {overall_metrics['fraction_within_1']:.3f}")
+            logger.info(f"  Fraction within 2 log units: {overall_metrics['fraction_within_2']:.3f}")
 
 
 if __name__ == '__main__':

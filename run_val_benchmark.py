@@ -191,6 +191,12 @@ def main():
     logger.info("\nCalculating metrics...")
     metrics = calculate_all_metrics(targets, predictions)
     
+    # Also calculate basic metrics explicitly on original scale
+    from src.evaluation import calculate_mse, calculate_rmse, calculate_mae
+    mse_original = calculate_mse(targets, predictions)
+    rmse_original = calculate_rmse(targets, predictions)
+    mae_original = calculate_mae(targets, predictions)
+    
     # Print summary
     print("\n" + "="*70)
     print("VALIDATION BENCHMARK RESULTS")
@@ -200,8 +206,14 @@ def main():
     print(f"Validation samples: {len(val_df)}")
     print("="*70)
     
+    # Print basic metrics on original scale first
+    print("\nBasic Metrics (Original pKd Scale):")
+    print(f"  MSE:  {mse_original:.4f}")
+    print(f"  RMSE: {rmse_original:.4f}")
+    print(f"  MAE:  {mae_original:.4f}")
+    
     # Print all metrics
-    print("\nOverall Metrics:")
+    print("\nAll Metrics:")
     for metric, value in metrics.items():
         if isinstance(value, float):
             if 'p' in metric and 'p_' not in metric:  # p-values
@@ -212,11 +224,12 @@ def main():
     # Performance by pKd range
     print("\nPerformance by pKd Range:")
     error_by_range = analyze_errors_by_range(targets, predictions)
-    print(f"{'Range':<15} {'Count':<8} {'RMSE':<8} {'MAE':<8} {'R²':<8}")
-    print("-" * 50)
+    print(f"{'Range':<15} {'Count':<8} {'RMSE':<8} {'MAE':<8} {'Mean Error':<12}")
+    print("-" * 60)
     for range_name, stats in error_by_range.items():
+        # Note: R² within narrow ranges is not meaningful - using mean error instead
         print(f"{range_name:<15} {stats['count']:<8} {stats['rmse']:<8.3f} "
-              f"{stats['mae']:<8.3f} {stats.get('r2', 0):<8.3f}")
+              f"{stats['mae']:<8.3f} {stats['mean_error']:<12.3f}")
     
     # Save detailed results
     results = {
