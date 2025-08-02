@@ -113,20 +113,15 @@ class MS_APPT_Trainer:
     def setup_optimizer(self):
         opt_config = self.config['training']['optimizer']
         
-        esm_params = []
-        other_params = []
-        
-        for name, param in self.model.named_parameters():
-            if 'esm' in name.lower():
-                esm_params.append(param)
-            else:
-                other_params.append(param)
-        
-        self.optimizer = AdamW([
-            {'params': other_params, 'lr': opt_config['learning_rate']},
-            {'params': esm_params, 'lr': opt_config['learning_rate'] / 10}
-        ], betas=opt_config['betas'], eps=opt_config['eps'],
-        weight_decay=opt_config['weight_decay'])
+        # Note: ESM-2 is in the embedding_extractor, not in self.model
+        # So we just optimize the MS-APPT model parameters
+        self.optimizer = AdamW(
+            self.model.parameters(),
+            lr=float(opt_config['learning_rate']),
+            betas=opt_config['betas'],
+            eps=float(opt_config['eps']),
+            weight_decay=float(opt_config['weight_decay'])
+        )
         
     def setup_loss(self):
         if self.config['loss']['type'] == 'mse':
@@ -176,10 +171,9 @@ class MS_APPT_Trainer:
     
     def train_epoch(self, train_loader: DataLoader) -> Dict[str, float]:
         self.model.train()
+        # Keep ESM-2 in eval mode (frozen) for now
+        # TODO: Implement ESM-2 fine-tuning if needed
         self.embedding_extractor.set_model_eval()
-        
-        if self.current_epoch >= self.config['model']['encoder']['freeze_epochs']:
-            self.embedding_extractor.set_model_train()
         
         epoch_metrics = defaultdict(float)
         progress_bar = tqdm(train_loader, desc=f"Epoch {self.current_epoch}")
@@ -298,7 +292,7 @@ class MS_APPT_Trainer:
         self.scheduler = CosineAnnealingLR(
             self.optimizer,
             T_max=total_steps,
-            eta_min=self.config['training']['scheduler']['eta_min']
+            eta_min=float(self.config['training']['scheduler']['eta_min'])
         )
         
         history = defaultdict(list)
