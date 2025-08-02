@@ -6,12 +6,13 @@ import math
 
 
 class MultiScaleConvolution(nn.Module):
-    def __init__(self, input_dim: int, kernel_sizes: List[int], num_filters: int):
+    def __init__(self, input_dim: int, kernel_sizes: List[int], num_filters: int, dropout: float = 0.0):
         super().__init__()
         self.convolutions = nn.ModuleList([
             nn.Conv1d(input_dim, num_filters, kernel_size=k, padding=k//2)
             for k in kernel_sizes
         ])
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else None
         self.output_dim = num_filters * len(kernel_sizes)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -20,6 +21,8 @@ class MultiScaleConvolution(nn.Module):
         conv_outputs = []
         for conv in self.convolutions:
             conv_out = F.relu(conv(x))
+            if self.dropout is not None:
+                conv_out = self.dropout(conv_out)
             conv_outputs.append(conv_out)
         
         combined = torch.cat(conv_outputs, dim=1)
@@ -217,33 +220,43 @@ class MS_APPT(nn.Module):
         self.embedding_dim = encoder_config['embedding_dim']
         
         proj_config = config['model']['projection']
-        self.projector = nn.Sequential(
+        layers = [
             nn.Linear(self.embedding_dim, proj_config['output_dim']),
-            nn.ReLU() if proj_config['activation'] == 'relu' else nn.GELU()
-        )
+            nn.ReLU() if proj_config.get('activation', 'relu') == 'relu' else nn.GELU()
+        ]
+        if 'dropout' in proj_config:
+            layers.append(nn.Dropout(proj_config['dropout']))
+        self.projector = nn.Sequential(*layers)
         self.hidden_dim = proj_config['output_dim']
         
         conv_config = config['model']['conv_layers']
         self.multi_scale_conv = MultiScaleConvolution(
             self.hidden_dim,
             conv_config['kernel_sizes'],
-            conv_config['num_filters']
+            conv_config['num_filters'],
+            conv_config.get('dropout', 0.0)
         )
         self.conv_output_dim = self.multi_scale_conv.output_dim
         
         self_att_config = config['model']['self_attention']
-        self.self_attention = MultiHeadSelfAttention(
-            self.conv_output_dim,
-            self_att_config['num_heads'],
-            self_att_config['dropout']
-        )
+        num_self_att_layers = self_att_config.get('num_layers', 1)
+        self.self_attention_layers = nn.ModuleList([
+            MultiHeadSelfAttention(
+                self.conv_output_dim,
+                self_att_config['num_heads'],
+                self_att_config['dropout']
+            ) for _ in range(num_self_att_layers)
+        ])
         
         cross_att_config = config['model']['cross_attention']
-        self.cross_attention = CrossAttention(
-            self.conv_output_dim,
-            cross_att_config['num_heads'],
-            cross_att_config['dropout']
-        )
+        num_cross_att_layers = cross_att_config.get('num_layers', 1)
+        self.cross_attention_layers = nn.ModuleList([
+            CrossAttention(
+                self.conv_output_dim,
+                cross_att_config['num_heads'],
+                cross_att_config['dropout']
+            ) for _ in range(num_cross_att_layers)
+        ])
         
         pooling_config = config['model']['pooling']
         self.use_mean_pool = 'mean' in pooling_config['methods']
@@ -317,11 +330,23 @@ class MS_APPT(nn.Module):
         mask1 = self._create_padding_mask(protein1_sequences, conv1.shape[1], device)
         mask2 = self._create_padding_mask(protein2_sequences, conv2.shape[1], device)
         
-        self_att1 = self.self_attention(conv1, mask1)
-        self_att2 = self.self_attention(conv2, mask2)
+        # Apply multiple self-attention layers
+        self_att1 = conv1
+        for self_att_layer in self.self_attention_layers:
+            self_att1 = self_att_layer(self_att1, mask1)
         
-        cross_att1 = self.cross_attention(self_att1, self_att2, mask1, mask2)
-        cross_att2 = self.cross_attention(self_att2, self_att1, mask2, mask1)
+        self_att2 = conv2
+        for self_att_layer in self.self_attention_layers:
+            self_att2 = self_att_layer(self_att2, mask2)
+        
+        # Apply multiple cross-attention layers
+        cross_att1 = self_att1
+        cross_att2 = self_att2
+        for cross_att_layer in self.cross_attention_layers:
+            cross_att1_new = cross_att_layer(cross_att1, cross_att2, mask1, mask2)
+            cross_att2_new = cross_att_layer(cross_att2, cross_att1, mask2, mask1)
+            cross_att1 = cross_att1_new
+            cross_att2 = cross_att2_new
         
         pooled1 = self._pool_features(cross_att1, mask1)
         pooled2 = self._pool_features(cross_att2, mask2)

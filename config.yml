@@ -23,33 +23,37 @@ data:
 model:
   # ESM-2 encoder configuration
   encoder:
-    model_name: "facebook/esm2_t30_150M_UR50D"
-    embedding_dim: 640
+    model_name: "facebook/esm2_t36_3B_UR50D"
+    embedding_dim: 2560  # ESM-2 3B has 2560 hidden dim
     freeze_epochs: 5
     fine_tune_lr_factor: 0.1
   
   # Projection layer
   projection:
-    output_dim: 384
+    output_dim: 384  # Project from 2560 to 384
     activation: "relu"
+    dropout: 0.1
     
   # Multi-scale convolution
   conv_layers:
     kernel_sizes: [3, 5, 7]
-    num_filters: 96
+    num_filters: 64  # Reduced from 96
     activation: "relu"
+    dropout: 0.1
     
   # Self-attention configuration
   self_attention:
-    num_heads: 6
+    num_heads: 8
     hidden_dim: 384
-    dropout: 0.1
+    dropout: 0.3  # Increased dropout
+    num_layers: 4  # Add attention layers parameter
     
   # Cross-attention configuration
   cross_attention:
-    num_heads: 6
+    num_heads: 8
     hidden_dim: 384
-    dropout: 0.1
+    dropout: 0.3  # Increased dropout
+    num_layers: 4  # Add attention layers parameter
     
   # Pooling strategies
   pooling:
@@ -58,11 +62,11 @@ model:
     
   # MLP head configuration
   mlp:
-    hidden_dims: [768, 384, 192]
+    hidden_dims: [384, 160, 64]  # Scaled down significantly
     activation: "gelu"
-    dropout: 0.25
+    dropout: 0.3  # Increased dropout
     use_layer_norm: true
-    use_residual: true
+    use_residual: false  # Disable residual for smaller network
     
 # Training Configuration
 training:
@@ -80,9 +84,9 @@ training:
     eta_min: 1e-6
     
   # Training parameters
-  batch_size: 32
-  gradient_accumulation_steps: 1
-  max_epochs: 30
+  batch_size: 32  # Reduced due to larger model
+  gradient_accumulation_steps: 1  # Effective batch size = 32
+  max_epochs: 50
   early_stopping:
     patience: 10
     metric: "validation_rmse"
