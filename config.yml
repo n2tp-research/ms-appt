@@ -10,7 +10,7 @@ data:
   # Preprocessing parameters
   preprocessing:
     min_length: 30
-    max_length: 2000
+    max_length: 3000
     valid_amino_acids: "ACDEFGHIKLMNPQRSTVWY"
     remove_duplicates: true
     
@@ -30,25 +30,25 @@ model:
   
   # Projection layer
   projection:
-    output_dim: 512
+    output_dim: 384
     activation: "relu"
     
   # Multi-scale convolution
   conv_layers:
     kernel_sizes: [3, 5, 7]
-    num_filters: 128
+    num_filters: 96
     activation: "relu"
     
   # Self-attention configuration
   self_attention:
-    num_heads: 8
-    hidden_dim: 512
+    num_heads: 6
+    hidden_dim: 384
     dropout: 0.1
     
   # Cross-attention configuration
   cross_attention:
-    num_heads: 8
-    hidden_dim: 512
+    num_heads: 6
+    hidden_dim: 384
     dropout: 0.1
     
   # Pooling strategies
@@ -58,9 +58,9 @@ model:
     
   # MLP head configuration
   mlp:
-    hidden_dims: [1024, 512, 256]
+    hidden_dims: [768, 384, 192]
     activation: "gelu"
-    dropout: 0.2
+    dropout: 0.25
     use_layer_norm: true
     use_residual: true
     
@@ -72,7 +72,7 @@ training:
     learning_rate: 5e-5
     betas: [0.9, 0.999]
     eps: 1e-8
-    weight_decay: 1e-4
+    weight_decay: 2e-4
     
   # Learning rate scheduler
   scheduler:
@@ -82,7 +82,7 @@ training:
   # Training parameters
   batch_size: 32
   gradient_accumulation_steps: 1
-  max_epochs: 100
+  max_epochs: 30
   early_stopping:
     patience: 10
     metric: "validation_rmse"

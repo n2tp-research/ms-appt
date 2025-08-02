@@ -13,6 +13,7 @@ from tqdm import tqdm
 import numpy as np
 from collections import defaultdict
 import time
+from ..utils import save_json_safe
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +56,12 @@ class ModelCheckpoint:
                 if old_checkpoint.exists():
                     old_checkpoint.unlink()
         
-        with open(self.checkpoint_dir / 'checkpoint_info.json', 'w') as f:
-            json.dump({
-                'best_score': self.best_score,
-                'best_epoch': epoch if is_best else None,
-                'metric': self.metric,
-                'mode': self.mode
-            }, f, indent=2)
+        save_json_safe({
+            'best_score': self.best_score,
+            'best_epoch': epoch if is_best else None,
+            'metric': self.metric,
+            'mode': self.mode
+        }, self.checkpoint_dir / 'checkpoint_info.json', indent=2)
         
         return is_best
 
@@ -358,13 +358,20 @@ class MS_APPT_Trainer:
             logger.info(f"Val Time: {val_metrics['val_time']:.1f}s, "
                        f"Throughput: {val_metrics['val_throughput']:.1f} samples/s")
             
+            # Convert numpy types to Python native types for JSON serialization
+            metrics_for_checkpoint = {}
+            for k, v in train_metrics.items():
+                metrics_for_checkpoint[k] = float(v) if isinstance(v, (np.floating, float)) else v
+            for k, v in val_metrics.items():
+                metrics_for_checkpoint[f'val_{k}'] = float(v) if isinstance(v, (np.floating, float)) else v
+            
             checkpoint_state = {
                 'epoch': epoch,
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
                 'config': self.config,
-                'metrics': {**train_metrics, **{f'val_{k}': v for k, v in val_metrics.items()}}
+                'metrics': metrics_for_checkpoint
             }
             
             val_rmse = val_metrics['rmse']

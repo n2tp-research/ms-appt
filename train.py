@@ -17,6 +17,7 @@ from src.data import ProteinDataPreprocessor, create_dataloaders
 from src.training import MS_APPT_Trainer
 from src.evaluation import print_metrics_summary, create_performance_report
 from src.visualization import create_all_visualizations
+from src.utils import save_json_safe
 
 
 def set_seed(seed: int = 42, deterministic: bool = True, benchmark: bool = False):
@@ -158,8 +159,7 @@ def main():
         num_epochs=config['training']['max_epochs']
     )
     
-    with open(checkpoint_dir / 'training_history.json', 'w') as f:
-        json.dump(history, f, indent=2)
+    save_json_safe(history, checkpoint_dir / 'training_history.json', indent=2)
     
     logger.info("Loading best model for final evaluation...")
     best_checkpoint = checkpoint_dir / 'best_model.pt'
@@ -205,8 +205,7 @@ def main():
             sequence_lengths=(seq_lengths1, seq_lengths2)
         )
         
-        with open(checkpoint_dir / 'validation_performance.json', 'w') as f:
-            json.dump(performance_report, f, indent=2)
+        save_json_safe(performance_report, checkpoint_dir / 'validation_performance.json', indent=2)
         
         logger.info("Creating visualizations...")
         vis_dir = Path(config['visualization']['output_dir'])
