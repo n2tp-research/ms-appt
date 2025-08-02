@@ -17,6 +17,9 @@ class ProteinDataPreprocessor:
         self.normalization_params = None
         
     def validate_sequence(self, sequence: str) -> bool:
+        if not isinstance(sequence, str):
+            return False
+            
         sequence = sequence.upper().strip()
         
         if not sequence:
@@ -28,6 +31,8 @@ class ProteinDataPreprocessor:
         return all(aa in self.valid_amino_acids for aa in sequence)
     
     def clean_sequence(self, sequence: str) -> str:
+        if not isinstance(sequence, str):
+            return ""
         return sequence.upper().strip()
     
     def remove_duplicates(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -110,6 +115,13 @@ class ProteinDataPreprocessor:
         logger.info(f"Starting preprocessing with {len(df)} samples")
         
         df = df.copy()
+        
+        # Drop rows with missing sequences
+        initial_count = len(df)
+        df = df.dropna(subset=['protein1_sequence', 'protein2_sequence'])
+        if len(df) < initial_count:
+            logger.warning(f"Dropped {initial_count - len(df)} rows with missing sequences")
+        
         df['protein1_sequence'] = df['protein1_sequence'].apply(self.clean_sequence)
         df['protein2_sequence'] = df['protein2_sequence'].apply(self.clean_sequence)
         
@@ -128,11 +140,22 @@ class ProteinDataPreprocessor:
             df = self.remove_duplicates(df)
             logger.info(f"Removed {initial_count - len(df)} duplicate protein pairs")
         
-        df = self.validate_pkd_range(df)
+        # Check if pkd column exists and has values
+        if 'pkd' in df.columns:
+            initial_count = len(df)
+            df = df.dropna(subset=['pkd'])
+            if len(df) < initial_count:
+                logger.warning(f"Dropped {initial_count - len(df)} rows with missing pKd values")
+            df = self.validate_pkd_range(df)
+        else:
+            logger.warning("No 'pkd' column found in dataset")
         
-        df = self.detect_outliers(df)
-        
-        df['pkd_normalized'] = self.normalize_pkd(df['pkd'].values, fit=fit_normalization)
+        # Only normalize if pkd exists
+        if 'pkd' in df.columns:
+            df = self.detect_outliers(df)
+            df['pkd_normalized'] = self.normalize_pkd(df['pkd'].values, fit=fit_normalization)
+        else:
+            df['pkd_normalized'] = 0.0  # Default value for inference without labels
         
         sequence_lengths = pd.concat([
             df['protein1_sequence'].str.len(),
