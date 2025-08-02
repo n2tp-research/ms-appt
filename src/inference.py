@@ -128,11 +128,27 @@ class MS_APPT_Predictor:
         result_df['pkd_predicted'] = predictions_denormalized
         
         if has_labels and 'pkd' in df.columns:
-            metrics = calculate_all_metrics(
-                df['pkd'].values,
-                predictions_denormalized,
-                denormalize_fn=None
-            )
+            # Calculate metrics directly on original pKd scale
+            from src.evaluation import calculate_mse, calculate_rmse, calculate_mae, calculate_r2, calculate_pearson, calculate_spearman
+            
+            y_true = df['pkd'].values
+            y_pred = predictions_denormalized
+            
+            metrics = {
+                'mse': calculate_mse(y_true, y_pred),
+                'rmse': calculate_rmse(y_true, y_pred),
+                'mae': calculate_mae(y_true, y_pred),
+                'r2': calculate_r2(y_true, y_pred),
+            }
+            
+            pearson_r, pearson_p = calculate_pearson(y_true, y_pred)
+            metrics['pearson_r'] = pearson_r
+            metrics['pearson_p'] = pearson_p
+            
+            spearman_r, spearman_p = calculate_spearman(y_true, y_pred)
+            metrics['spearman_r'] = spearman_r
+            metrics['spearman_p'] = spearman_p
+            
             print_metrics_summary(metrics)
         
         return result_df
@@ -179,10 +195,12 @@ class MS_APPT_Predictor:
             seq_lengths1 = result_df['protein1_sequence'].str.len().values
             seq_lengths2 = result_df['protein2_sequence'].str.len().values
             
+            # Create performance report with metrics on original pKd scale only
             performance_report = create_performance_report(
                 result_df['pkd'].values,
                 result_df['pkd_predicted'].values,
-                sequence_lengths=(seq_lengths1, seq_lengths2)
+                sequence_lengths=(seq_lengths1, seq_lengths2),
+                denormalize_fn=None  # Already using denormalized values
             )
             results['performance'] = performance_report
         

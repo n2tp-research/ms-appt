@@ -55,15 +55,25 @@ def calculate_relative_error(y_true: np.ndarray, y_pred: np.ndarray,
 def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray,
                          denormalize_fn: Optional[callable] = None) -> Dict[str, float]:
     
+    # If denormalize_fn is None, assume data is already on original scale
     if denormalize_fn is not None:
         y_true_original = denormalize_fn(y_true)
         y_pred_original = denormalize_fn(y_pred)
+        # Also calculate normalized metrics
+        metrics_normalized = {
+            'mse_normalized': calculate_mse(y_true, y_pred),
+            'rmse_normalized': calculate_rmse(y_true, y_pred),
+            'mae_normalized': calculate_mae(y_true, y_pred),
+            'r2_normalized': calculate_r2(y_true, y_pred)
+        }
     else:
         y_true_original = y_true
         y_pred_original = y_pred
+        metrics_normalized = {}
     
     metrics = {}
     
+    # Primary metrics on original pKd scale
     metrics['mse'] = calculate_mse(y_true_original, y_pred_original)
     metrics['rmse'] = calculate_rmse(y_true_original, y_pred_original)
     metrics['mae'] = calculate_mae(y_true_original, y_pred_original)
@@ -88,10 +98,8 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray,
     metrics['mean_relative_error'] = np.mean(relative_errors)
     metrics['median_relative_error'] = np.median(relative_errors)
     
-    metrics['mse_normalized'] = calculate_mse(y_true, y_pred)
-    metrics['rmse_normalized'] = calculate_rmse(y_true, y_pred)
-    metrics['mae_normalized'] = calculate_mae(y_true, y_pred)
-    metrics['r2_normalized'] = calculate_r2(y_true, y_pred)
+    # Add normalized metrics if applicable
+    metrics.update(metrics_normalized)
     
     return metrics
 
