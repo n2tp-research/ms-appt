@@ -121,7 +121,8 @@ def create_dataloaders(train_df: pd.DataFrame, val_df: pd.DataFrame,
         batch_sampler=train_batch_sampler,
         collate_fn=collate_protein_pairs,
         num_workers=config['hardware']['num_workers'],
-        pin_memory=config['hardware']['pin_memory']
+        pin_memory=config['hardware']['pin_memory'],
+        persistent_workers=config['hardware']['num_workers'] > 0
     )
     
     val_loader = DataLoader(
@@ -129,7 +130,8 @@ def create_dataloaders(train_df: pd.DataFrame, val_df: pd.DataFrame,
         batch_sampler=val_batch_sampler,
         collate_fn=collate_protein_pairs,
         num_workers=config['hardware']['num_workers'],
-        pin_memory=config['hardware']['pin_memory']
+        pin_memory=config['hardware']['pin_memory'],
+        persistent_workers=config['hardware']['num_workers'] > 0
     )
     
     logger.info(f"Created train loader with {len(train_loader)} batches")

@@ -19,14 +19,14 @@ from src.evaluation import print_metrics_summary, create_performance_report
 from src.visualization import create_all_visualizations
 
 
-def set_seed(seed: int = 42):
+def set_seed(seed: int = 42, deterministic: bool = True, benchmark: bool = False):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = deterministic
+    torch.backends.cudnn.benchmark = benchmark
     os.environ['PYTHONHASHSEED'] = str(seed)
 
 
@@ -88,7 +88,11 @@ def main():
         device = 'cpu'
         config['hardware']['device'] = 'cpu'
     
-    set_seed(args.seed)
+    set_seed(
+        args.seed,
+        deterministic=config['reproducibility']['deterministic'],
+        benchmark=config['reproducibility']['benchmark']
+    )
     config['reproducibility']['seed'] = args.seed
     
     log_file = setup_logging(config['logging']['log_dir'], config['logging']['log_level'])

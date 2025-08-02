@@ -41,11 +41,12 @@ def plot_scatter_predictions(y_true: np.ndarray, y_pred: np.ndarray,
     ax.legend(loc='upper left')
     ax.grid(True, alpha=0.3)
     
-    from ..evaluation.metrics import calculate_rmse, calculate_mae
+    from ..evaluation.metrics import calculate_mse, calculate_rmse, calculate_mae
+    mse = calculate_mse(y_true, y_pred)
     rmse = calculate_rmse(y_true, y_pred)
     mae = calculate_mae(y_true, y_pred)
     
-    textstr = f'RMSE: {rmse:.3f}\nMAE: {mae:.3f}\nR²: {r_value**2:.3f}'
+    textstr = f'MSE: {mse:.3f}\nRMSE: {rmse:.3f}\nMAE: {mae:.3f}\nR²: {r_value**2:.3f}'
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
     ax.text(0.95, 0.05, textstr, transform=ax.transAxes, fontsize=10,
             verticalalignment='bottom', horizontalalignment='right', bbox=props)

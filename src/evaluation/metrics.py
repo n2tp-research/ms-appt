@@ -6,12 +6,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def calculate_mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return np.mean((y_true - y_pred) ** 2)
+
+
 def calculate_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return np.sqrt(np.mean((y_true - y_pred) ** 2))
+    return np.sqrt(calculate_mse(y_true, y_pred))
 
 
 def calculate_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return np.mean(np.abs(y_true - y_pred))
+
+
+def calculate_r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Calculate R² (coefficient of determination)."""
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    return 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
 
 
 def calculate_pearson(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
@@ -53,8 +64,10 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray,
     
     metrics = {}
     
+    metrics['mse'] = calculate_mse(y_true_original, y_pred_original)
     metrics['rmse'] = calculate_rmse(y_true_original, y_pred_original)
     metrics['mae'] = calculate_mae(y_true_original, y_pred_original)
+    metrics['r2'] = calculate_r2(y_true_original, y_pred_original)
     
     pearson_r, pearson_p = calculate_pearson(y_true_original, y_pred_original)
     metrics['pearson_r'] = pearson_r
@@ -75,8 +88,10 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray,
     metrics['mean_relative_error'] = np.mean(relative_errors)
     metrics['median_relative_error'] = np.median(relative_errors)
     
+    metrics['mse_normalized'] = calculate_mse(y_true, y_pred)
     metrics['rmse_normalized'] = calculate_rmse(y_true, y_pred)
     metrics['mae_normalized'] = calculate_mae(y_true, y_pred)
+    metrics['r2_normalized'] = calculate_r2(y_true, y_pred)
     
     return metrics
 
@@ -130,8 +145,10 @@ def analyze_errors_by_range(y_true: np.ndarray, y_pred: np.ndarray,
             'count': int(np.sum(mask)),
             'mean_error': float(np.mean(errors)),
             'std_error': float(np.std(errors)),
+            'mse': float(calculate_mse(y_true[mask], y_pred[mask])),
             'rmse': float(calculate_rmse(y_true[mask], y_pred[mask])),
             'mae': float(calculate_mae(y_true[mask], y_pred[mask])),
+            'r2': float(calculate_r2(y_true[mask], y_pred[mask])),
             'min_error': float(np.min(errors)),
             'max_error': float(np.max(errors))
         }
@@ -141,8 +158,10 @@ def analyze_errors_by_range(y_true: np.ndarray, y_pred: np.ndarray,
 
 def print_metrics_summary(metrics: Dict[str, float]):
     logger.info("\n=== Evaluation Metrics ===")
+    logger.info(f"MSE: {metrics['mse']:.4f}")
     logger.info(f"RMSE: {metrics['rmse']:.4f}")
     logger.info(f"MAE: {metrics['mae']:.4f}")
+    logger.info(f"R²: {metrics['r2']:.4f}")
     logger.info(f"Pearson r: {metrics['pearson_r']:.4f} (p={metrics['pearson_p']:.2e})")
     logger.info(f"Spearman ρ: {metrics['spearman_r']:.4f} (p={metrics['spearman_p']:.2e})")
     logger.info(f"Fraction within 1 log unit: {metrics['fraction_within_1']:.3f}")

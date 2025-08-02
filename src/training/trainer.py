@@ -263,6 +263,10 @@ class MS_APPT_Trainer:
         all_targets = []
         total_loss = 0
         
+        # Timing metrics
+        start_time = time.time()
+        total_samples = 0
+        
         with torch.no_grad():
             for batch in tqdm(val_loader, desc="Validation"):
                 protein1_embeddings, protein2_embeddings = self._get_embeddings_batch(
@@ -288,14 +292,28 @@ class MS_APPT_Trainer:
                 total_loss += loss.item()
                 all_predictions.extend(predictions.cpu().numpy())
                 all_targets.extend(targets.cpu().numpy())
+                total_samples += len(batch['pkd'])
         
         all_predictions = np.array(all_predictions)
         all_targets = np.array(all_targets)
         
+        # Calculate timing metrics
+        total_time = time.time() - start_time
+        samples_per_second = total_samples / total_time
+        
+        # Calculate R²
+        ss_res = np.sum((all_targets - all_predictions) ** 2)
+        ss_tot = np.sum((all_targets - np.mean(all_targets)) ** 2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+        
         metrics = {
             'loss': total_loss / len(val_loader),
+            'mse': np.mean((all_predictions - all_targets) ** 2),
             'rmse': np.sqrt(np.mean((all_predictions - all_targets) ** 2)),
-            'mae': np.mean(np.abs(all_predictions - all_targets))
+            'mae': np.mean(np.abs(all_predictions - all_targets)),
+            'r2': r2,
+            'val_time': total_time,
+            'val_throughput': samples_per_second
         }
         
         return metrics
@@ -333,8 +351,12 @@ class MS_APPT_Trainer:
             logger.info(f"Epoch {epoch + 1} completed in {epoch_time:.1f}s")
             logger.info(f"Train Loss: {train_metrics['loss']:.4f}")
             logger.info(f"Val Loss: {val_metrics['loss']:.4f}, "
+                       f"Val MSE: {val_metrics['mse']:.4f}, "
                        f"Val RMSE: {val_metrics['rmse']:.4f}, "
-                       f"Val MAE: {val_metrics['mae']:.4f}")
+                       f"Val MAE: {val_metrics['mae']:.4f}, "
+                       f"Val R²: {val_metrics['r2']:.4f}")
+            logger.info(f"Val Time: {val_metrics['val_time']:.1f}s, "
+                       f"Throughput: {val_metrics['val_throughput']:.1f} samples/s")
             
             checkpoint_state = {
                 'epoch': epoch,

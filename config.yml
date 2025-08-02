@@ -80,7 +80,7 @@ training:
     eta_min: 1e-6
     
   # Training parameters
-  batch_size: 16
+  batch_size: 32
   gradient_accumulation_steps: 2
   max_epochs: 100
   early_stopping:
@@ -105,8 +105,10 @@ loss:
   
 metrics:
   regression:
+    - "mse"
     - "rmse"
     - "mae"
+    - "r2"
     - "pearson"
     - "spearman"
   domain_specific:
@@ -117,7 +119,7 @@ metrics:
 # Hardware and Performance
 hardware:
   device: "cuda"
-  num_workers: 4
+  num_workers: 8
   pin_memory: true
   
 # Logging Configuration
@@ -132,12 +134,12 @@ logging:
 # Reproducibility
 reproducibility:
   seed: 42
-  deterministic: true
-  benchmark: false
+  deterministic: false
+  benchmark: true
   
 # Inference Configuration
 inference:
-  batch_size: 32
+  batch_size: 64
   use_cache: true
   output_dir: "predictions"
   save_attention_weights: false
