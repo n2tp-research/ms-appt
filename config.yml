@@ -30,41 +30,41 @@ model:
   
   # Projection layer
   projection:
-    output_dim: 384  # Project from 1280 to 384
+    output_dim: 256  # Project from 1280 to 256 for efficiency
     activation: "relu"
     dropout: 0.1
     
   # Multi-scale convolution
   conv_layers:
     kernel_sizes: [3, 5, 7]
-    num_filters: 64  # Reduced from 96
+    num_filters: 32  # Further reduced for efficiency
     activation: "relu"
     dropout: 0.1
     
   # Self-attention configuration
   self_attention:
     num_heads: 4
-    hidden_dim: 384
+    hidden_dim: 256  # Match projection dim
     dropout: 0.3  # Increased dropout
-    num_layers: 4  # Add attention layers parameter
+    num_layers: 2  # Reduced from 4 to 2 layers
     
   # Cross-attention configuration
   cross_attention:
     num_heads: 4
-    hidden_dim: 384
+    hidden_dim: 256  # Match projection dim
     dropout: 0.3  # Increased dropout
-    num_layers: 4  # Add attention layers parameter
+    num_layers: 2  # Reduced from 4 to 2 layers
     
   # Pooling strategies
   pooling:
     methods: ["mean", "max", "attention"]
-    attention_hidden_dim: 256
+    attention_hidden_dim: 128  # Reduced for efficiency
     
   # MLP head configuration
   mlp:
-    hidden_dims: [384, 160, 64]  # Scaled down significantly
+    hidden_dims: [256, 128, 64]  # Further scaled down
     activation: "gelu"
-    dropout: 0.3  # Increased dropout
+    dropout: 0.35  # Slightly increased dropout
     use_layer_norm: true
     use_residual: false  # Disable residual for smaller network
     
