@@ -89,7 +89,7 @@ class MultiHeadSelfAttention(nn.Module):
             
             if mask is not None:
                 mask = mask.unsqueeze(1).unsqueeze(2)
-                scores = scores.masked_fill(mask == 0, -65504.0 if x.dtype == torch.float16 else -1e9)
+                scores = scores.masked_fill(mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
             
             attention_weights = F.softmax(scores, dim=-1).to(v.dtype)
             attention_weights = self.dropout(attention_weights)
@@ -162,7 +162,7 @@ class CrossAttention(nn.Module):
             
             if key_mask is not None:
                 key_mask = key_mask.unsqueeze(1).unsqueeze(2)
-                scores = scores.masked_fill(key_mask == 0, -65504.0 if query.dtype == torch.float16 else -1e9)
+                scores = scores.masked_fill(key_mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
             
             attention_weights = F.softmax(scores, dim=-1).to(v.dtype)
             attention_weights = self.dropout(attention_weights)
