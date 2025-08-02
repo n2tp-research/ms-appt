@@ -4,6 +4,13 @@ import torch.nn.functional as F
 from typing import Dict, List, Tuple, Optional
 import math
 
+# Try to import Flash Attention
+try:
+    from flash_attn import flash_attn_func
+    FLASH_ATTENTION_AVAILABLE = True
+except ImportError:
+    FLASH_ATTENTION_AVAILABLE = False
+
 
 class MultiScaleConvolution(nn.Module):
     def __init__(self, input_dim: int, kernel_sizes: List[int], num_filters: int, dropout: float = 0.0):
@@ -40,13 +47,16 @@ class MultiHeadSelfAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
         
-        self.q_linear = nn.Linear(hidden_dim, hidden_dim)
-        self.k_linear = nn.Linear(hidden_dim, hidden_dim)
-        self.v_linear = nn.Linear(hidden_dim, hidden_dim)
+        # Use a single linear projection for Q, K, V for efficiency
+        self.qkv_linear = nn.Linear(hidden_dim, 3 * hidden_dim, bias=False)
         self.out_linear = nn.Linear(hidden_dim, hidden_dim)
         
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(hidden_dim)
+        
+        # Initialize weights
+        nn.init.xavier_uniform_(self.qkv_linear.weight)
+        nn.init.xavier_uniform_(self.out_linear.weight)
         
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size, seq_len, _ = x.shape
@@ -54,25 +64,40 @@ class MultiHeadSelfAttention(nn.Module):
         residual = x
         x = self.layer_norm(x)
         
-        Q = self.q_linear(x).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        K = self.k_linear(x).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        V = self.v_linear(x).view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        # Single projection for Q, K, V
+        qkv = self.qkv_linear(x)
+        qkv = qkv.reshape(batch_size, seq_len, 3, self.num_heads, self.head_dim)
+        qkv = qkv.permute(2, 0, 3, 1, 4)  # [3, B, H, S, D]
+        q, k, v = qkv[0], qkv[1], qkv[2]  # Each is [B, H, S, D]
         
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
-        
-        if mask is not None:
-            mask = mask.unsqueeze(1).unsqueeze(2)
-            # Use -65504 for float16 compatibility (max negative value for half precision)
-            scores = scores.masked_fill(mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
-        
-        attention_weights = F.softmax(scores, dim=-1)
-        self._attention_weights = attention_weights.clone()
-        attention_weights = self.dropout(attention_weights)
-        
-        attention_output = torch.matmul(attention_weights, V)
-        attention_output = attention_output.transpose(1, 2).contiguous().view(
-            batch_size, seq_len, self.hidden_dim
-        )
+        if FLASH_ATTENTION_AVAILABLE and mask is None and x.is_cuda:
+            # Use Flash Attention for maximum speed (no mask support)
+            # Reshape for flash attention: [B, S, H, D]
+            q = q.transpose(1, 2).contiguous()
+            k = k.transpose(1, 2).contiguous()
+            v = v.transpose(1, 2).contiguous()
+            
+            attention_output = flash_attn_func(q, k, v, dropout_p=self.dropout.p if self.training else 0.0)
+            attention_output = attention_output.reshape(batch_size, seq_len, self.hidden_dim)
+        else:
+            # Efficient standard attention
+            # Use float32 for attention computation to avoid overflow
+            q = q.float()
+            k = k.float()
+            
+            scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+            
+            if mask is not None:
+                mask = mask.unsqueeze(1).unsqueeze(2)
+                scores = scores.masked_fill(mask == 0, -65504.0 if x.dtype == torch.float16 else -1e9)
+            
+            attention_weights = F.softmax(scores, dim=-1).to(v.dtype)
+            attention_weights = self.dropout(attention_weights)
+            
+            attention_output = torch.matmul(attention_weights, v)
+            attention_output = attention_output.transpose(1, 2).contiguous().view(
+                batch_size, seq_len, self.hidden_dim
+            )
         
         output = self.out_linear(attention_output)
         output = self.dropout(output)
@@ -90,43 +115,62 @@ class CrossAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
         
-        self.q_linear = nn.Linear(hidden_dim, hidden_dim)
-        self.k_linear = nn.Linear(hidden_dim, hidden_dim)
-        self.v_linear = nn.Linear(hidden_dim, hidden_dim)
+        # Separate projections for query and key-value
+        self.q_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.kv_linear = nn.Linear(hidden_dim, 2 * hidden_dim, bias=False)
         self.out_linear = nn.Linear(hidden_dim, hidden_dim)
         
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(hidden_dim)
         
+        # Initialize weights
+        nn.init.xavier_uniform_(self.q_linear.weight)
+        nn.init.xavier_uniform_(self.kv_linear.weight)
+        nn.init.xavier_uniform_(self.out_linear.weight)
+        
     def forward(self, query: torch.Tensor, key_value: torch.Tensor,
                 query_mask: Optional[torch.Tensor] = None,
                 key_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        batch_size = query.shape[0]
-        query_len = query.shape[1]
-        key_len = key_value.shape[1]
+        batch_size, query_len, _ = query.shape
+        _, key_len, _ = key_value.shape
         
         residual = query
         query = self.layer_norm(query)
         
-        Q = self.q_linear(query).view(batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
-        K = self.k_linear(key_value).view(batch_size, key_len, self.num_heads, self.head_dim).transpose(1, 2)
-        V = self.v_linear(key_value).view(batch_size, key_len, self.num_heads, self.head_dim).transpose(1, 2)
+        # Project query
+        q = self.q_linear(query).view(batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
         
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        # Project key and value together
+        kv = self.kv_linear(key_value).view(batch_size, key_len, 2, self.num_heads, self.head_dim)
+        kv = kv.permute(2, 0, 3, 1, 4)  # [2, B, H, S, D]
+        k, v = kv[0], kv[1]  # Each is [B, H, S, D]
         
-        if key_mask is not None:
-            key_mask = key_mask.unsqueeze(1).unsqueeze(2)
-            # Use -65504 for float16 compatibility (max negative value for half precision)
-            scores = scores.masked_fill(key_mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
-        
-        attention_weights = F.softmax(scores, dim=-1)
-        self._attention_weights = attention_weights.clone()
-        attention_weights = self.dropout(attention_weights)
-        
-        attention_output = torch.matmul(attention_weights, V)
-        attention_output = attention_output.transpose(1, 2).contiguous().view(
-            batch_size, query_len, self.hidden_dim
-        )
+        if FLASH_ATTENTION_AVAILABLE and key_mask is None and query.is_cuda:
+            # Use Flash Attention for cross-attention
+            q = q.transpose(1, 2).contiguous()  # [B, S, H, D]
+            k = k.transpose(1, 2).contiguous()
+            v = v.transpose(1, 2).contiguous()
+            
+            attention_output = flash_attn_func(q, k, v, dropout_p=self.dropout.p if self.training else 0.0)
+            attention_output = attention_output.reshape(batch_size, query_len, self.hidden_dim)
+        else:
+            # Efficient standard attention with float32 for stability
+            q = q.float()
+            k = k.float()
+            
+            scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+            
+            if key_mask is not None:
+                key_mask = key_mask.unsqueeze(1).unsqueeze(2)
+                scores = scores.masked_fill(key_mask == 0, -65504.0 if query.dtype == torch.float16 else -1e9)
+            
+            attention_weights = F.softmax(scores, dim=-1).to(v.dtype)
+            attention_weights = self.dropout(attention_weights)
+            
+            attention_output = torch.matmul(attention_weights, v)
+            attention_output = attention_output.transpose(1, 2).contiguous().view(
+                batch_size, query_len, self.hidden_dim
+            )
         
         output = self.out_linear(attention_output)
         output = self.dropout(output)
