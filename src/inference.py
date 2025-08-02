@@ -162,7 +162,7 @@ class MS_APPT_Predictor:
         logger.info("Running predictions...")
         result_df = self.predict_dataframe(df, has_labels=has_labels)
         
-        output_df = result_df[['protein1_sequence', 'protein2_sequence', 'pkd_predicted']]
+        output_df = result_df[['protein1_sequence', 'protein2_sequence', 'pkd_predicted']].copy()
         if has_labels and 'pkd' in result_df.columns:
             output_df['pkd_actual'] = result_df['pkd']
             output_df['error'] = output_df['pkd_predicted'] - output_df['pkd_actual']
