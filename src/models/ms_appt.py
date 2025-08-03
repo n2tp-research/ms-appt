@@ -263,68 +263,44 @@ class MS_APPT(nn.Module):
         encoder_config = config['model']['encoder']
         self.embedding_dim = encoder_config['embedding_dim']
         
+        # Projection layer
         proj_config = config['model']['projection']
-        layers = [
-            nn.Linear(self.embedding_dim, proj_config['output_dim']),
-            nn.ReLU() if proj_config.get('activation', 'relu') == 'relu' else nn.GELU()
-        ]
-        if 'dropout' in proj_config:
-            layers.append(nn.Dropout(proj_config['dropout']))
-        self.projector = nn.Sequential(*layers)
         self.hidden_dim = proj_config['output_dim']
         
-        conv_config = config['model']['conv_layers']
-        self.multi_scale_conv = MultiScaleConvolution(
-            self.hidden_dim,
-            conv_config['kernel_sizes'],
-            conv_config['num_filters'],
-            conv_config.get('dropout', 0.0)
+        # Single shared projection (like simple APPT)
+        self.projector = nn.Linear(self.embedding_dim, self.hidden_dim)
+        
+        # Add transformer encoder layers (proven to work in simple APPT)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.hidden_dim,
+            nhead=8,
+            dim_feedforward=self.hidden_dim * 4,
+            dropout=0.1,
+            activation='gelu',
+            batch_first=True,
+            norm_first=True  # Pre-norm for stability
         )
-        self.conv_output_dim = self.multi_scale_conv.output_dim
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
         
-        self_att_config = config['model']['self_attention']
-        num_self_att_layers = self_att_config.get('num_layers', 1)
-        self.self_attention_layers = nn.ModuleList([
-            MultiHeadSelfAttention(
-                self.conv_output_dim,
-                self_att_config['num_heads'],
-                self_att_config['dropout']
-            ) for _ in range(num_self_att_layers)
-        ])
-        
+        # Keep cross-attention for explicit interaction modeling
         cross_att_config = config['model']['cross_attention']
-        num_cross_att_layers = cross_att_config.get('num_layers', 1)
-        self.cross_attention_layers = nn.ModuleList([
-            CrossAttention(
-                self.conv_output_dim,
-                cross_att_config['num_heads'],
-                cross_att_config['dropout']
-            ) for _ in range(num_cross_att_layers)
-        ])
+        self.cross_attention = CrossAttention(
+            self.hidden_dim,
+            cross_att_config['num_heads'],
+            dropout=0.1  # Lower dropout
+        )
         
-        pooling_config = config['model']['pooling']
-        self.use_mean_pool = 'mean' in pooling_config['methods']
-        self.use_max_pool = 'max' in pooling_config['methods']
-        self.use_attention_pool = 'attention' in pooling_config['methods']
-        
-        if self.use_attention_pool:
-            self.attention_pool = AttentionPooling(
-                self.conv_output_dim,
-                pooling_config['attention_hidden_dim']
-            )
-        
-        num_pool_methods = len(pooling_config['methods'])
-        pool_output_dim = self.conv_output_dim * num_pool_methods
-        pair_feature_dim = pool_output_dim * 4
-        
+        # MLP head - match simple APPT structure
         mlp_config = config['model']['mlp']
-        self.mlp = DeepMLP(
-            pair_feature_dim,
-            mlp_config['hidden_dims'],
-            mlp_config['dropout'],
-            mlp_config['activation'],
-            mlp_config['use_layer_norm'],
-            mlp_config['use_residual']
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(self.hidden_dim),
+            nn.Linear(self.hidden_dim, 160),
+            nn.GELU(),
+            nn.Dropout(0.2),
+            nn.Linear(160, 80),
+            nn.GELU(),
+            nn.Dropout(0.2),
+            nn.Linear(80, 1)
         )
         
     def _create_padding_mask(self, sequences: List[str], max_length: int, device: torch.device) -> torch.Tensor:
@@ -337,69 +313,51 @@ class MS_APPT(nn.Module):
         
         return mask
     
-    def _pool_features(self, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        pooled_features = []
-        
-        if self.use_mean_pool:
-            masked_features = features * mask.unsqueeze(-1)
-            sum_features = masked_features.sum(dim=1)
-            count = mask.sum(dim=1, keepdim=True).clamp(min=1)
-            mean_pooled = sum_features / count
-            pooled_features.append(mean_pooled)
-        
-        if self.use_max_pool:
-            # Use appropriate negative value for dtype
-            fill_value = -65504.0 if features.dtype == torch.float16 else -1e9
-            masked_features = features.masked_fill(~mask.unsqueeze(-1).bool(), fill_value)
-            max_pooled, _ = masked_features.max(dim=1)
-            pooled_features.append(max_pooled)
-        
-        if self.use_attention_pool:
-            attention_pooled = self.attention_pool(features, mask)
-            pooled_features.append(attention_pooled)
-        
-        return torch.cat(pooled_features, dim=-1)
-    
     def forward(self, protein1_embeddings: torch.Tensor, protein2_embeddings: torch.Tensor,
                 protein1_sequences: List[str], protein2_sequences: List[str]) -> torch.Tensor:
         
         device = protein1_embeddings.device
         
-        proj1 = self.projector(protein1_embeddings)
-        proj2 = self.projector(protein2_embeddings)
+        # Project embeddings
+        features1 = self.projector(protein1_embeddings)
+        features2 = self.projector(protein2_embeddings)
         
-        conv1 = self.multi_scale_conv(proj1)
-        conv2 = self.multi_scale_conv(proj2)
+        # Create masks
+        mask1 = self._create_padding_mask(protein1_sequences, features1.shape[1], device)
+        mask2 = self._create_padding_mask(protein2_sequences, features2.shape[1], device)
         
-        mask1 = self._create_padding_mask(protein1_sequences, conv1.shape[1], device)
-        mask2 = self._create_padding_mask(protein2_sequences, conv2.shape[1], device)
+        # Stack proteins together (like simple APPT)
+        stacked_features = torch.cat([features1, features2], dim=1)  # [batch, seq1+seq2, hidden_dim]
+        stacked_mask = torch.cat([mask1, mask2], dim=1)  # [batch, seq1+seq2]
         
-        # Apply multiple self-attention layers
-        self_att1 = conv1
-        for self_att_layer in self.self_attention_layers:
-            self_att1 = self_att_layer(self_att1, mask1)
+        # Apply transformer encoder (proven to work in simple APPT)
+        stacked_features = self.transformer(stacked_features, src_key_padding_mask=(stacked_mask == 0))
         
-        self_att2 = conv2
-        for self_att_layer in self.self_attention_layers:
-            self_att2 = self_att_layer(self_att2, mask2)
+        # Split back
+        seq_len1 = features1.shape[1]
+        transformed1 = stacked_features[:, :seq_len1, :]
+        transformed2 = stacked_features[:, seq_len1:, :]
         
-        # Apply multiple cross-attention layers
-        cross_att1 = self_att1
-        cross_att2 = self_att2
-        for cross_att_layer in self.cross_attention_layers:
-            cross_att1_new = cross_att_layer(cross_att1, cross_att2, mask1, mask2)
-            cross_att2_new = cross_att_layer(cross_att2, cross_att1, mask2, mask1)
-            cross_att1 = cross_att1_new
-            cross_att2 = cross_att2_new
+        # Apply cross-attention for explicit interaction modeling
+        cross_features1 = self.cross_attention(transformed1, transformed2, mask1, mask2)
+        cross_features2 = self.cross_attention(transformed2, transformed1, mask2, mask1)
         
-        pooled1 = self._pool_features(cross_att1, mask1)
-        pooled2 = self._pool_features(cross_att2, mask2)
+        # Simple mean pooling
+        pooled1 = self._mean_pool_with_mask(cross_features1, mask1)
+        pooled2 = self._mean_pool_with_mask(cross_features2, mask2)
         
-        element_product = pooled1 * pooled2
-        absolute_diff = torch.abs(pooled1 - pooled2)
+        # Final representation
+        pair_features = self._mean_pool_with_mask(stacked_features, stacked_mask)
         
-        pair_features = torch.cat([pooled1, pooled2, element_product, absolute_diff], dim=-1)
-        
+        # Final prediction
         output = self.mlp(pair_features)
         
         return output.squeeze(-1)
+    
+    def _mean_pool_with_mask(self, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Simple mean pooling with mask."""
+        mask = mask.unsqueeze(-1)  # [batch, seq_len, 1]
+        masked_features = features * mask
+        sum_features = masked_features.sum(dim=1)
+        sum_mask = mask.sum(dim=1).clamp(min=1e-9)
+        return sum_features / sum_mask

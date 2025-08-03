@@ -34,31 +34,15 @@ model:
     activation: "relu"
     dropout: 0.1
     
-  # Multi-scale convolution
-  conv_layers:
-    kernel_sizes: [3, 5, 7]
-    num_filters: 32  # Further reduced for efficiency
-    activation: "relu"
-    dropout: 0.1
-    
-  # Self-attention configuration
-  self_attention:
-    num_heads: 4
-    hidden_dim: 256  # Match projection dim
-    dropout: 0.3  # Increased dropout
-    num_layers: 2  # Reduced from 4 to 2 layers
-    
-  # Cross-attention configuration
+  # Cross-attention configuration (single layer for protein interaction)
   cross_attention:
-    num_heads: 4
+    num_heads: 8  # More heads, single layer
     hidden_dim: 256  # Match projection dim
-    dropout: 0.3  # Increased dropout
-    num_layers: 2  # Reduced from 4 to 2 layers
+    dropout: 0.2  # Moderate dropout
     
-  # Pooling strategies
+  # Simple pooling
   pooling:
-    methods: ["mean", "max", "attention"]
-    attention_hidden_dim: 128  # Reduced for efficiency
+    methods: ["mean"]  # Just mean pooling
     
   # MLP head configuration
   mlp:
