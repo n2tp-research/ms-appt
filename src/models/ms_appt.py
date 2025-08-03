@@ -317,40 +317,44 @@ class MS_APPT(nn.Module):
                 protein1_sequences: List[str], protein2_sequences: List[str]) -> torch.Tensor:
         
         device = protein1_embeddings.device
+        batch_size = protein1_embeddings.shape[0]
         
         # Project embeddings
         features1 = self.projector(protein1_embeddings)
         features2 = self.projector(protein2_embeddings)
         
-        # Create masks
-        mask1 = self._create_padding_mask(protein1_sequences, features1.shape[1], device)
-        mask2 = self._create_padding_mask(protein2_sequences, features2.shape[1], device)
+        # Stack proteins as separate sequences (like simple APPT)
+        # Shape: [batch, 2, max_seq_len, hidden_dim]
+        max_len = max(features1.shape[1], features2.shape[1])
         
-        # Stack proteins together (like simple APPT)
-        stacked_features = torch.cat([features1, features2], dim=1)  # [batch, seq1+seq2, hidden_dim]
-        stacked_mask = torch.cat([mask1, mask2], dim=1)  # [batch, seq1+seq2]
+        # Pad to same length
+        if features1.shape[1] < max_len:
+            pad_len = max_len - features1.shape[1]
+            features1 = F.pad(features1, (0, 0, 0, pad_len))
+        if features2.shape[1] < max_len:
+            pad_len = max_len - features2.shape[1]
+            features2 = F.pad(features2, (0, 0, 0, pad_len))
         
-        # Apply transformer encoder (proven to work in simple APPT)
-        stacked_features = self.transformer(stacked_features, src_key_padding_mask=(stacked_mask == 0))
+        # Stack: [batch, 2, seq_len, hidden_dim]
+        stacked = torch.stack([features1, features2], dim=1)
         
-        # Split back
-        seq_len1 = features1.shape[1]
-        transformed1 = stacked_features[:, :seq_len1, :]
-        transformed2 = stacked_features[:, seq_len1:, :]
+        # Reshape for transformer: [batch * 2, seq_len, hidden_dim]
+        stacked_flat = stacked.view(-1, max_len, self.hidden_dim)
         
-        # Apply cross-attention for explicit interaction modeling
-        cross_features1 = self.cross_attention(transformed1, transformed2, mask1, mask2)
-        cross_features2 = self.cross_attention(transformed2, transformed1, mask2, mask1)
+        # Apply transformer encoder
+        transformed = self.transformer(stacked_flat)
         
-        # Simple mean pooling
-        pooled1 = self._mean_pool_with_mask(cross_features1, mask1)
-        pooled2 = self._mean_pool_with_mask(cross_features2, mask2)
+        # Reshape back: [batch, 2, seq_len, hidden_dim]
+        transformed = transformed.view(batch_size, 2, max_len, self.hidden_dim)
         
-        # Final representation
-        pair_features = self._mean_pool_with_mask(stacked_features, stacked_mask)
+        # Mean pool over sequence dimension for each protein
+        pooled = transformed.mean(dim=2)  # [batch, 2, hidden_dim]
+        
+        # Final pooling over the 2 proteins
+        final_features = pooled.mean(dim=1)  # [batch, hidden_dim]
         
         # Final prediction
-        output = self.mlp(pair_features)
+        output = self.mlp(final_features)
         
         return output.squeeze(-1)
     

@@ -24,20 +24,20 @@ model:
   # ESM-2 encoder configuration
   encoder:
     model_name: "facebook/esm2_t36_3B_UR50D"
-    embedding_dim: 2560  # ESM-2 650M has 1280 hidden dim
+    embedding_dim: 2560  # ESM-2 3B has 2560 hidden dim
     freeze_epochs: 5
     fine_tune_lr_factor: 0.1
   
   # Projection layer
   projection:
-    output_dim: 256  # Project from 2560 to 256 for efficiency
+    output_dim: 384  # Project from 2560 to 256 for efficiency
     activation: "relu"
     dropout: 0.1
     
   # Cross-attention configuration (single layer for protein interaction)
   cross_attention:
-    num_heads: 8  # More heads, single layer
-    hidden_dim: 256  # Match projection dim
+    num_heads: 4  # More heads, single layer
+    hidden_dim: 384  # Match projection dim
     dropout: 0.2  # Moderate dropout
     
   # Simple pooling
@@ -46,7 +46,7 @@ model:
     
   # MLP head configuration
   mlp:
-    hidden_dims: [256, 128, 64]  # Further scaled down
+    hidden_dims: [384, 192, 96]  # Further scaled down
     activation: "gelu"
     dropout: 0.35  # Slightly increased dropout
     use_layer_norm: true
