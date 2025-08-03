@@ -15,7 +15,7 @@ data:
     remove_duplicates: true
     
   # Train/validation split
-  validation_split: 0.01
+  validation_split: 0.3
   stratify_by: "pkd"
   random_seed: 42
 
@@ -94,9 +94,9 @@ training:
   # Training parameters
   batch_size: 64  # Reduced due to larger model
   gradient_accumulation_steps: 1  # Effective batch size = 32
-  max_epochs: 80
+  max_epochs: 200
   early_stopping:
-    patience: 10
+    patience: 30
     metric: "validation_rmse"
     mode: "min"
     
