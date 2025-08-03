@@ -43,6 +43,18 @@ model:
     activation: "gelu"
     norm_first: true  # Pre-norm for stability
     
+  # Multi-scale convolution configuration
+  multi_scale_conv:
+    kernel_sizes: [3, 5, 7]  # Local motifs, secondary structures
+    num_filters: 64  # Filters per kernel size
+    dropout: 0.1
+    
+  # Cross-attention configuration
+  cross_attention:
+    num_heads: 8  # 256 / 8 = 32 dim per head
+    hidden_dim: 256  # Match projection dim
+    dropout: 0.15
+    
   # Interface gating configuration
   interface_gating:
     hidden_dim: 128  # Hidden dimension for gating network

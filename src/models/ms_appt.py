@@ -12,6 +12,107 @@ except ImportError:
     FLASH_ATTENTION_AVAILABLE = False
 
 
+class MultiScaleConvolution(nn.Module):
+    """Extract multi-scale local patterns from protein sequences."""
+    def __init__(self, input_dim: int, kernel_sizes: List[int], num_filters: int, dropout: float = 0.0):
+        super().__init__()
+        self.convolutions = nn.ModuleList([
+            nn.Conv1d(input_dim, num_filters, kernel_size=k, padding=k//2)
+            for k in kernel_sizes
+        ])
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else None
+        self.output_dim = num_filters * len(kernel_sizes)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.transpose(1, 2)  # [batch, hidden_dim, seq_len]
+        
+        conv_outputs = []
+        for conv in self.convolutions:
+            conv_out = F.relu(conv(x))
+            if self.dropout is not None:
+                conv_out = self.dropout(conv_out)
+            conv_outputs.append(conv_out)
+        
+        combined = torch.cat(conv_outputs, dim=1)
+        combined = combined.transpose(1, 2)  # [batch, seq_len, output_dim]
+        
+        return combined
+
+
+class CrossAttention(nn.Module):
+    """Model explicit protein-protein interactions."""
+    def __init__(self, hidden_dim: int, num_heads: int, dropout: float = 0.1):
+        super().__init__()
+        assert hidden_dim % num_heads == 0
+        
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.head_dim = hidden_dim // num_heads
+        
+        # Separate projections for query and key-value
+        self.q_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.kv_linear = nn.Linear(hidden_dim, 2 * hidden_dim, bias=False)
+        self.out_linear = nn.Linear(hidden_dim, hidden_dim)
+        
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+        
+        # Initialize weights
+        nn.init.xavier_uniform_(self.q_linear.weight)
+        nn.init.xavier_uniform_(self.kv_linear.weight)
+        nn.init.xavier_uniform_(self.out_linear.weight)
+        
+    def forward(self, query: torch.Tensor, key_value: torch.Tensor,
+                query_mask: Optional[torch.Tensor] = None,
+                key_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        batch_size, query_len, _ = query.shape
+        _, key_len, _ = key_value.shape
+        
+        residual = query
+        query = self.layer_norm(query)
+        
+        # Project query
+        q = self.q_linear(query).view(batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
+        
+        # Project key and value together
+        kv = self.kv_linear(key_value).view(batch_size, key_len, 2, self.num_heads, self.head_dim)
+        kv = kv.permute(2, 0, 3, 1, 4)  # [2, B, H, S, D]
+        k, v = kv[0], kv[1]  # Each is [B, H, S, D]
+        
+        if FLASH_ATTENTION_AVAILABLE and key_mask is None and query.is_cuda:
+            # Use Flash Attention for cross-attention
+            q = q.transpose(1, 2).contiguous()  # [B, S, H, D]
+            k = k.transpose(1, 2).contiguous()
+            v = v.transpose(1, 2).contiguous()
+            
+            attention_output = flash_attn_func(q, k, v, dropout_p=self.dropout.p if self.training else 0.0)
+            attention_output = attention_output.reshape(batch_size, query_len, self.hidden_dim)
+        else:
+            # Efficient standard attention with float32 for stability
+            q = q.float()
+            k = k.float()
+            
+            scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+            
+            if key_mask is not None:
+                key_mask = key_mask.unsqueeze(1).unsqueeze(2)
+                scores = scores.masked_fill(key_mask == 0, -65504.0 if scores.dtype == torch.float16 else -1e9)
+            
+            attention_weights = F.softmax(scores, dim=-1).to(v.dtype)
+            attention_weights = self.dropout(attention_weights)
+            
+            attention_output = torch.matmul(attention_weights, v)
+            attention_output = attention_output.transpose(1, 2).contiguous().view(
+                batch_size, query_len, self.hidden_dim
+            )
+        
+        output = self.out_linear(attention_output)
+        output = self.dropout(output)
+        output = output + residual
+        
+        return output
+
+
 
 
 
@@ -124,6 +225,16 @@ class MS_APPT(nn.Module):
         # Single shared projection (like simple APPT)
         self.projector = nn.Linear(self.embedding_dim, self.hidden_dim)
         
+        # Multi-scale convolution for local pattern extraction
+        conv_config = config['model']['multi_scale_conv']
+        self.multi_scale_conv = MultiScaleConvolution(
+            self.hidden_dim,
+            conv_config['kernel_sizes'],
+            conv_config['num_filters'],
+            dropout=conv_config['dropout']
+        )
+        self.conv_projection = nn.Linear(self.multi_scale_conv.output_dim, self.hidden_dim)
+        
         # Add transformer encoder layers (proven to work in simple APPT)
         transformer_config = config['model']['transformer']
         # Ensure num_heads divides hidden_dim evenly
@@ -144,6 +255,14 @@ class MS_APPT(nn.Module):
             norm_first=transformer_config['norm_first']
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=transformer_config['num_layers'])
+        
+        # Cross-attention for explicit interaction modeling
+        cross_att_config = config['model']['cross_attention']
+        self.cross_attention = CrossAttention(
+            cross_att_config['hidden_dim'],
+            cross_att_config['num_heads'],
+            dropout=cross_att_config['dropout']
+        )
         
         # Interface gating mechanism
         gating_config = config['model']['interface_gating']
@@ -226,6 +345,22 @@ class MS_APPT(nn.Module):
         # Reshape for transformer: [batch * 2, seq_len, hidden_dim]
         stacked_flat = stacked.view(-1, max_len, self.hidden_dim)
         
+        # Apply multi-scale convolution first
+        conv_features1 = self.multi_scale_conv(features1)
+        conv_features2 = self.multi_scale_conv(features2)
+        
+        # Project conv features back to hidden_dim and combine with original
+        conv_features1 = self.conv_projection(conv_features1)
+        conv_features2 = self.conv_projection(conv_features2)
+        
+        # Residual connection - combine conv features with original
+        features1 = features1 + conv_features1
+        features2 = features2 + conv_features2
+        
+        # Update stacked features with conv-enhanced features
+        stacked = torch.stack([features1, features2], dim=1)
+        stacked_flat = stacked.view(-1, max_len, self.hidden_dim)
+        
         # Apply transformer encoder
         transformed_flat = self.transformer(stacked_flat)
         
@@ -236,13 +371,17 @@ class MS_APPT(nn.Module):
         trans_features1 = transformed[:, 0, :, :]  # [batch, seq_len, hidden_dim]
         trans_features2 = transformed[:, 1, :, :]  # [batch, seq_len, hidden_dim]
         
+        # Apply cross-attention for explicit protein-protein interaction
+        cross_features1 = self.cross_attention(trans_features1, trans_features2, mask1, mask2)
+        cross_features2 = self.cross_attention(trans_features2, trans_features1, mask2, mask1)
+        
         # Learn interface importance scores for each protein
-        importance1 = self.interface_gating(trans_features1, mask1)
-        importance2 = self.interface_gating(trans_features2, mask2)
+        importance1 = self.interface_gating(cross_features1, mask1)
+        importance2 = self.interface_gating(cross_features2, mask2)
         
         # Apply adaptive pooling to get multiple representations
-        pools1 = self.adaptive_pooling(trans_features1, importance1, mask1)
-        pools2 = self.adaptive_pooling(trans_features2, importance2, mask2)
+        pools1 = self.adaptive_pooling(cross_features1, importance1, mask1)
+        pools2 = self.adaptive_pooling(cross_features2, importance2, mask2)
         
         # Biological feature engineering using pooled features
         # 1. Complementarity (using interface pools - what actually binds)
