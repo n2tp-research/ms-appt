@@ -15,7 +15,7 @@ data:
     remove_duplicates: true
     
   # Train/validation split
-  validation_split: 0.3
+  validation_split: 0.02
   stratify_by: "pkd"
   random_seed: 42
 
@@ -32,37 +32,37 @@ model:
   projection:
     output_dim: 384  # Project from 1280 to 256 for efficiency
     activation: "relu"
-    dropout: 0.3
+    dropout: 0.1
     
   # Transformer encoder configuration
   transformer:
     num_layers: 4  # Reduced from 3
     num_heads: 8
     dim_feedforward_multiplier: 4  # dim_feedforward = hidden_dim * multiplier
-    dropout: 0.3
+    dropout: 0.1
     activation: "gelu"
     norm_first: true  # Pre-norm for stability
     
   # Multi-scale convolution configuration
   multi_scale_conv:
     kernel_sizes: [3, 5, 7]  # Local motifs, secondary structures
-    num_filters: 64  # Filters per kernel size
-    dropout: 0.3
+    num_filters: 128  # Filters per kernel size
+    dropout: 0.1
     
   # Cross-attention configuration
   cross_attention:
     num_heads: 8  # 256 / 8 = 32 dim per head
     hidden_dim: 384  # Match projection dim
-    dropout: 0.35
+    dropout: 0.15
     
   # Interface gating configuration
   interface_gating:
     hidden_dim: 192  # Hidden dimension for gating network
-    dropout: 0.3
+    dropout: 0.1
     
   # Adaptive pooling configuration  
   adaptive_pooling:
-    top_k_ratio: 0.1  # Consider top 10% positions as hotspots
+    top_k_ratio: 0.2  # Consider top 10% positions as hotspots
     
   # Simple pooling (kept for compatibility)
   pooling:
