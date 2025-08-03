@@ -43,13 +43,16 @@ model:
     activation: "gelu"
     norm_first: true  # Pre-norm for stability
     
-  # Cross-attention configuration (single layer for protein interaction)
-  cross_attention:
-    num_heads: 8  # 256 / 8 = 32 dim per head
-    hidden_dim: 256  # Match projection dim
-    dropout: 0.15  # Moderate dropout
+  # Interface gating configuration
+  interface_gating:
+    hidden_dim: 128  # Hidden dimension for gating network
+    dropout: 0.1
     
-  # Simple pooling
+  # Adaptive pooling configuration  
+  adaptive_pooling:
+    top_k_ratio: 0.1  # Consider top 10% positions as hotspots
+    
+  # Simple pooling (kept for compatibility)
   pooling:
     methods: ["mean"]  # Just mean pooling
     
