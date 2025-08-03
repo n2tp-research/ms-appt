@@ -271,36 +271,51 @@ class MS_APPT(nn.Module):
         self.projector = nn.Linear(self.embedding_dim, self.hidden_dim)
         
         # Add transformer encoder layers (proven to work in simple APPT)
+        transformer_config = config['model']['transformer']
+        # Ensure num_heads divides hidden_dim evenly
+        num_heads = transformer_config['num_heads']
+        if self.hidden_dim % num_heads != 0:
+            # Find the nearest valid number of heads
+            valid_heads = [h for h in [8, 6, 4, 3, 2] if self.hidden_dim % h == 0]
+            num_heads = valid_heads[0] if valid_heads else 1
+            print(f"Warning: Adjusting num_heads from {transformer_config['num_heads']} to {num_heads} for hidden_dim={self.hidden_dim}")
+        
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.hidden_dim,
-            nhead=8,
-            dim_feedforward=self.hidden_dim * 4,
-            dropout=0.1,
-            activation='gelu',
+            nhead=num_heads,
+            dim_feedforward=self.hidden_dim * transformer_config['dim_feedforward_multiplier'],
+            dropout=transformer_config['dropout'],
+            activation=transformer_config['activation'],
             batch_first=True,
-            norm_first=True  # Pre-norm for stability
+            norm_first=transformer_config['norm_first']
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=transformer_config['num_layers'])
         
         # Keep cross-attention for explicit interaction modeling
         cross_att_config = config['model']['cross_attention']
         self.cross_attention = CrossAttention(
-            self.hidden_dim,
+            cross_att_config['hidden_dim'],
             cross_att_config['num_heads'],
-            dropout=0.1  # Lower dropout
+            dropout=cross_att_config['dropout']
         )
         
-        # MLP head - match simple APPT structure
+        # MLP head using config dimensions
         mlp_config = config['model']['mlp']
+        mlp_dims = mlp_config['hidden_dims']
+        # Input will be concatenated features: p1 + p2 + cross1 + cross2
+        input_dim = self.hidden_dim * 4
         self.mlp = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim),
-            nn.Linear(self.hidden_dim, 160),
+            nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, mlp_dims[0]),
             nn.GELU(),
-            nn.Dropout(0.2),
-            nn.Linear(160, 80),
+            nn.Dropout(mlp_config['dropout']),
+            nn.Linear(mlp_dims[0], mlp_dims[1]),
             nn.GELU(),
-            nn.Dropout(0.2),
-            nn.Linear(80, 1)
+            nn.Dropout(mlp_config['dropout']),
+            nn.Linear(mlp_dims[1], mlp_dims[2]),
+            nn.GELU(),
+            nn.Dropout(mlp_config['dropout']),
+            nn.Linear(mlp_dims[2], 1)
         )
         
     def _create_padding_mask(self, sequences: List[str], max_length: int, device: torch.device) -> torch.Tensor:
@@ -323,17 +338,23 @@ class MS_APPT(nn.Module):
         features1 = self.projector(protein1_embeddings)
         features2 = self.projector(protein2_embeddings)
         
+        # Create masks for original sequences
+        mask1 = self._create_padding_mask(protein1_sequences, features1.shape[1], device)
+        mask2 = self._create_padding_mask(protein2_sequences, features2.shape[1], device)
+        
         # Stack proteins as separate sequences (like simple APPT)
         # Shape: [batch, 2, max_seq_len, hidden_dim]
         max_len = max(features1.shape[1], features2.shape[1])
         
-        # Pad to same length
+        # Pad features and masks to same length
         if features1.shape[1] < max_len:
             pad_len = max_len - features1.shape[1]
             features1 = F.pad(features1, (0, 0, 0, pad_len))
+            mask1 = F.pad(mask1, (0, pad_len))
         if features2.shape[1] < max_len:
             pad_len = max_len - features2.shape[1]
             features2 = F.pad(features2, (0, 0, 0, pad_len))
+            mask2 = F.pad(mask2, (0, pad_len))
         
         # Stack: [batch, 2, seq_len, hidden_dim]
         stacked = torch.stack([features1, features2], dim=1)
@@ -342,19 +363,35 @@ class MS_APPT(nn.Module):
         stacked_flat = stacked.view(-1, max_len, self.hidden_dim)
         
         # Apply transformer encoder
-        transformed = self.transformer(stacked_flat)
+        transformed_flat = self.transformer(stacked_flat)
         
         # Reshape back: [batch, 2, seq_len, hidden_dim]
-        transformed = transformed.view(batch_size, 2, max_len, self.hidden_dim)
+        transformed = transformed_flat.view(batch_size, 2, max_len, self.hidden_dim)
         
-        # Mean pool over sequence dimension for each protein
-        pooled = transformed.mean(dim=2)  # [batch, 2, hidden_dim]
+        # Split transformed features
+        trans_features1 = transformed[:, 0, :, :]  # [batch, seq_len, hidden_dim]
+        trans_features2 = transformed[:, 1, :, :]  # [batch, seq_len, hidden_dim]
         
-        # Final pooling over the 2 proteins
-        final_features = pooled.mean(dim=1)  # [batch, hidden_dim]
+        # Apply cross-attention for explicit protein-protein interaction
+        cross_features1 = self.cross_attention(trans_features1, trans_features2, mask1, mask2)
+        cross_features2 = self.cross_attention(trans_features2, trans_features1, mask2, mask1)
+        
+        # Pool all features
+        pooled_trans1 = self._mean_pool_with_mask(trans_features1, mask1)
+        pooled_trans2 = self._mean_pool_with_mask(trans_features2, mask2)
+        pooled_cross1 = self._mean_pool_with_mask(cross_features1, mask1)
+        pooled_cross2 = self._mean_pool_with_mask(cross_features2, mask2)
+        
+        # Concatenate all features for rich representation
+        combined_features = torch.cat([
+            pooled_trans1,   # Transformed protein 1
+            pooled_trans2,   # Transformed protein 2
+            pooled_cross1,   # Cross-attended protein 1
+            pooled_cross2    # Cross-attended protein 2
+        ], dim=-1)  # [batch, hidden_dim * 4]
         
         # Final prediction
-        output = self.mlp(final_features)
+        output = self.mlp(combined_features)
         
         return output.squeeze(-1)
     

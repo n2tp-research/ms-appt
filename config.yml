@@ -34,6 +34,15 @@ model:
     activation: "relu"
     dropout: 0.1
     
+  # Transformer encoder configuration
+  transformer:
+    num_layers: 3
+    num_heads: 8
+    dim_feedforward_multiplier: 4  # dim_feedforward = hidden_dim * multiplier
+    dropout: 0.1
+    activation: "gelu"
+    norm_first: true  # Pre-norm for stability
+    
   # Cross-attention configuration (single layer for protein interaction)
   cross_attention:
     num_heads: 4  # More heads, single layer
