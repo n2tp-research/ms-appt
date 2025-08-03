@@ -86,9 +86,9 @@ training:
     mode: "min"
     
   # Mixed precision and optimization
-  mixed_precision: false
+  mixed_precision: true
   gradient_clipping:
-    max_norm: 5.0
+    max_norm: 1.0
     
   # Checkpointing
   checkpoint_dir: "checkpoints"
