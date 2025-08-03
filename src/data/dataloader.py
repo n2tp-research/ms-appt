@@ -19,29 +19,42 @@ class ProteinPairDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict:
         row = self.df.iloc[idx]
         
-        return {
+        item = {
             'protein1_sequence': row['protein1_sequence'],
             'protein2_sequence': row['protein2_sequence'],
-            'pkd': torch.tensor(row['pkd'], dtype=torch.float32),
-            'pkd_normalized': torch.tensor(row['pkd_normalized'], dtype=torch.float32),
             'index': idx
         }
+        
+        # Add pkd values only if they exist
+        if 'pkd' in row:
+            item['pkd'] = torch.tensor(row['pkd'], dtype=torch.float32)
+        if 'pkd_normalized' in row:
+            item['pkd_normalized'] = torch.tensor(row['pkd_normalized'], dtype=torch.float32)
+            
+        return item
 
 
 def collate_protein_pairs(batch: list) -> Dict:
     protein1_seqs = [item['protein1_sequence'] for item in batch]
     protein2_seqs = [item['protein2_sequence'] for item in batch]
-    pkd_values = torch.stack([item['pkd'] for item in batch])
-    pkd_normalized = torch.stack([item['pkd_normalized'] for item in batch])
     indices = torch.tensor([item['index'] for item in batch])
     
-    return {
+    result = {
         'protein1_sequences': protein1_seqs,
         'protein2_sequences': protein2_seqs,
-        'pkd': pkd_values,
-        'pkd_normalized': pkd_normalized,
         'indices': indices
     }
+    
+    # Add pkd values only if they exist in the batch
+    if 'pkd' in batch[0]:
+        pkd_values = torch.stack([item['pkd'] for item in batch])
+        result['pkd'] = pkd_values
+        
+    if 'pkd_normalized' in batch[0]:
+        pkd_normalized = torch.stack([item['pkd_normalized'] for item in batch])
+        result['pkd_normalized'] = pkd_normalized
+    
+    return result
 
 
 class DynamicBatchSampler:
