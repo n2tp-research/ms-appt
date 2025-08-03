@@ -302,8 +302,8 @@ class MS_APPT(nn.Module):
         # MLP head using config dimensions
         mlp_config = config['model']['mlp']
         mlp_dims = mlp_config['hidden_dims']
-        # Input will be concatenated features: p1 + p2 + cross1 + cross2
-        input_dim = self.hidden_dim * 4
+        # Input: p1 + p2 + complementarity + difference + interaction
+        input_dim = self.hidden_dim * 5
         self.mlp = nn.Sequential(
             nn.LayerNorm(input_dim),
             nn.Linear(input_dim, mlp_dims[0]),
@@ -373,6 +373,7 @@ class MS_APPT(nn.Module):
         trans_features2 = transformed[:, 1, :, :]  # [batch, seq_len, hidden_dim]
         
         # Apply cross-attention for explicit protein-protein interaction
+        # This models how binding interfaces recognize each other
         cross_features1 = self.cross_attention(trans_features1, trans_features2, mask1, mask2)
         cross_features2 = self.cross_attention(trans_features2, trans_features1, mask2, mask1)
         
@@ -382,13 +383,24 @@ class MS_APPT(nn.Module):
         pooled_cross1 = self._mean_pool_with_mask(cross_features1, mask1)
         pooled_cross2 = self._mean_pool_with_mask(cross_features2, mask2)
         
-        # Concatenate all features for rich representation
+        # Biological feature engineering
+        # 1. Complementarity score (how well proteins match)
+        complementarity = pooled_cross1 * pooled_cross2
+        
+        # 2. Difference features (charge/hydrophobic mismatch)
+        difference = torch.abs(pooled_trans1 - pooled_trans2)
+        
+        # 3. Interaction strength (geometric mean of cross-attention)
+        interaction = torch.sqrt(torch.abs(pooled_cross1 * pooled_cross2) + 1e-8)
+        
+        # Concatenate biologically meaningful features
         combined_features = torch.cat([
-            pooled_trans1,   # Transformed protein 1
-            pooled_trans2,   # Transformed protein 2
-            pooled_cross1,   # Cross-attended protein 1
-            pooled_cross2    # Cross-attended protein 2
-        ], dim=-1)  # [batch, hidden_dim * 4]
+            pooled_trans1,      # Protein 1 features
+            pooled_trans2,      # Protein 2 features  
+            complementarity,    # How well they match (like lock and key)
+            difference,         # Dissimilarity (important for specificity)
+            interaction        # Binding interface strength
+        ], dim=-1)  # [batch, hidden_dim * 5]
         
         # Final prediction
         output = self.mlp(combined_features)
