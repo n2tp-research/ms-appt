@@ -11,7 +11,7 @@ data:
   preprocessing:
     min_length: 30
     max_length: 5000
-    valid_amino_acids: "ACDEFGHIKLMNPQRSTVWYBZ"  # Including B (Asx) and Z (Glx) for ambiguous cases
+    valid_amino_acids: null  # Don't filter - ESM-2 handles non-standard AAs
     remove_duplicates: false
     
   # Train/validation split
