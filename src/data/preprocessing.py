@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 class ProteinDataPreprocessor:
     def __init__(self, config: Dict):
         self.config = config['data']['preprocessing']
-        self.valid_amino_acids = set(self.config['valid_amino_acids'])
+        # Handle null/None for valid_amino_acids - if None, don't filter
+        valid_aa = self.config.get('valid_amino_acids')
+        self.valid_amino_acids = set(valid_aa) if valid_aa else None
         self.min_length = self.config['min_length']
         self.max_length = self.config['max_length']
         self.normalization_params = None
@@ -28,7 +30,11 @@ class ProteinDataPreprocessor:
         if len(sequence) < self.min_length or len(sequence) > self.max_length:
             return False
             
-        return all(aa in self.valid_amino_acids for aa in sequence)
+        # Only check amino acids if valid_amino_acids is specified
+        if self.valid_amino_acids:
+            return all(aa in self.valid_amino_acids for aa in sequence)
+        
+        return True  # If no valid_amino_acids specified, accept all sequences
     
     def clean_sequence(self, sequence: str) -> str:
         if not isinstance(sequence, str):
