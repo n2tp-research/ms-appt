@@ -138,7 +138,17 @@ class ProteinDataPreprocessor:
         
         invalid_count = (~valid_mask).sum()
         if invalid_count > 0:
-            logger.warning(f"Removing {invalid_count} entries with invalid sequences")
+            # Check what's causing invalidity for better logging
+            too_short = df[~valid_mask].apply(lambda row: 
+                len(row['protein1_sequence']) < self.min_length or 
+                len(row['protein2_sequence']) < self.min_length, axis=1).sum()
+            too_long = df[~valid_mask].apply(lambda row: 
+                len(row['protein1_sequence']) > self.max_length or 
+                len(row['protein2_sequence']) > self.max_length, axis=1).sum()
+            
+            logger.warning(f"Removing {invalid_count} entries with invalid sequences "
+                         f"(too short: {too_short}, too long: {too_long}, "
+                         f"other: {invalid_count - too_short - too_long})")
             df = df[valid_mask].copy()
         
         if self.config['remove_duplicates']:

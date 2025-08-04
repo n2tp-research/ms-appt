@@ -9,8 +9,8 @@ data:
   
   # Preprocessing parameters
   preprocessing:
-    min_length: 30
-    max_length: 5000
+    min_length: 0
+    max_length: 50000
     valid_amino_acids: null  # Don't filter - ESM-2 handles non-standard AAs
     remove_duplicates: false
     
