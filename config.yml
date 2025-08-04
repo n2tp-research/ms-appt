@@ -92,7 +92,7 @@ training:
     eta_min: 1e-6
     
   # Training parameters
-  batch_size: 64  # Reduced due to larger model
+  batch_size: 32  # Reduced due to larger model
   gradient_accumulation_steps: 1  # Effective batch size = 32
   max_epochs: 200
   early_stopping:
