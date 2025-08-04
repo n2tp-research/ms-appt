@@ -92,8 +92,8 @@ training:
     eta_min: 1e-6
     
   # Training parameters
-  batch_size: 8  # Reduced due to larger model
-  gradient_accumulation_steps: 4  # Effective batch size = 32
+  batch_size: 64  # Reduced due to larger model
+  gradient_accumulation_steps: 1  # Effective batch size = 32
   max_epochs: 200
   early_stopping:
     patience: 30
@@ -103,7 +103,7 @@ training:
   # Mixed precision and optimization
   mixed_precision: true
   gradient_clipping:
-    max_norm: 1.0
+    max_norm: 10.0
     
   # Checkpointing
   checkpoint_dir: "checkpoints"
