@@ -39,7 +39,7 @@ model:
     num_layers: 4  # Reduced from 3
     num_heads: 8
     dim_feedforward_multiplier: 4  # dim_feedforward = hidden_dim * multiplier
-    dropout: 0.1
+    dropout: 0.3
     activation: "gelu"
     norm_first: true  # Pre-norm for stability
     
@@ -53,7 +53,7 @@ model:
   cross_attention:
     num_heads: 8  # 256 / 8 = 32 dim per head
     hidden_dim: 384  # Match projection dim
-    dropout: 0.15
+    dropout: 0.35
     
   # Interface gating configuration
   interface_gating:
@@ -62,19 +62,19 @@ model:
     
   # Adaptive pooling configuration  
   adaptive_pooling:
-    top_k_ratio: 0.2  # Consider top 10% positions as hotspots
+    top_k_ratio: 0.1  # Consider top 10% positions as hotspots
     
   # Simple pooling (kept for compatibility)
   pooling:
     methods: ["mean"]  # Just mean pooling
     
-  # MLP head configuration
+  # Affinity head configuration (simplified like APPT)
   mlp:
-    hidden_dims: [384, 192, 96]  # Scaled down for 650M
+    hidden_dims: [384, 192]  # Two hidden layers only
     activation: "gelu"
     dropout: 0.3  # Moderate dropout
     use_layer_norm: true
-    use_residual: false  # Disable residual for smaller network
+    use_residual: false  # No residual connections
     
 # Training Configuration
 training:

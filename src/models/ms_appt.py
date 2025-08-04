@@ -279,27 +279,34 @@ class MS_APPT(nn.Module):
             top_k_ratio=pooling_config['top_k_ratio']
         )
         
-        # MLP head using config dimensions
+        # Affinity prediction head (like simple APPT)
         mlp_config = config['model']['mlp']
         mlp_dims = mlp_config['hidden_dims']
+        dropout = mlp_config['dropout']
+        
         # Input features:
         # - 2 * (interface + non_interface + hotspot + global) = 8 * hidden_dim
         # - complementarity, difference = 2 * hidden_dim  
         # - interface_sizes = 2
         input_dim = self.hidden_dim * 10 + 2
-        self.mlp = nn.Sequential(
-            nn.LayerNorm(input_dim),
-            nn.Linear(input_dim, mlp_dims[0]),
-            nn.GELU(),
-            nn.Dropout(mlp_config['dropout']),
-            nn.Linear(mlp_dims[0], mlp_dims[1]),
-            nn.GELU(),
-            nn.Dropout(mlp_config['dropout']),
-            nn.Linear(mlp_dims[1], mlp_dims[2]),
-            nn.GELU(),
-            nn.Dropout(mlp_config['dropout']),
-            nn.Linear(mlp_dims[2], 1)
-        )
+        
+        # Build affinity head dynamically based on config
+        layers = [nn.LayerNorm(input_dim)]
+        
+        # Add hidden layers from config
+        prev_dim = input_dim
+        for hidden_dim in mlp_dims:
+            layers.extend([
+                nn.Linear(prev_dim, hidden_dim),
+                nn.GELU(),
+                nn.Dropout(dropout)
+            ])
+            prev_dim = hidden_dim
+        
+        # Add final output layer
+        layers.append(nn.Linear(prev_dim, 1))
+        
+        self.affinity_head = nn.Sequential(*layers)
         
     def _create_padding_mask(self, sequences: List[str], max_length: int, device: torch.device) -> torch.Tensor:
         batch_size = len(sequences)
@@ -411,7 +418,7 @@ class MS_APPT(nn.Module):
         ], dim=-1)
         
         # Final prediction
-        output = self.mlp(combined_features)
+        output = self.affinity_head(combined_features)
         
         return output.squeeze(-1)
     
