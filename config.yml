@@ -10,9 +10,9 @@ data:
   # Preprocessing parameters
   preprocessing:
     min_length: 30
-    max_length: 2000
-    valid_amino_acids: "ACDEFGHIKLMNPQRSTVWY"
-    remove_duplicates: true
+    max_length: 5000
+    valid_amino_acids: "ACDEFGHIKLMNPQRSTVWYBZ"  # Including B (Asx) and Z (Glx) for ambiguous cases
+    remove_duplicates: false
     
   # Train/validation split
   validation_split: 0.02
